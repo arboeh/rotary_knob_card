@@ -34,6 +34,9 @@ class RotaryKnobCard extends HTMLElement {
       throw new Error("You must define an entity (input_select)");
     }
     this._config = config;
+    this._hass = null;
+    this._stateObj = null;
+    this._isRendered = false;
 
     if (!this.shadowRoot) {
       this.attachShadow({ mode: "open" });
@@ -41,24 +44,43 @@ class RotaryKnobCard extends HTMLElement {
   }
 
   set hass(hass) {
+    const entityId = this._config.entity;
+    const stateObj = hass.states[entityId];
+
+    if (!stateObj) {
+      if (!this._isRendered) {
+        this.shadowRoot.innerHTML = `<ha-card><div style="padding: 16px; color: red;">Entity ${entityId} not found</div></ha-card>`;
+        this._isRendered = true;
+      }
+      return;
+    }
+
+    const oldState = this._stateObj;
     this._hass = hass;
-    this.updateKnob();
+    this._stateObj = stateObj;
+
+    // WICHTIG: Prüfen, ob sich State oder Optionen tatsächlich geändert haben.
+    // Das verhindert das ständige Neuladen und das damit verbundene Flackern!
+    const stateChanged = !oldState || oldState.state !== stateObj.state;
+    const optionsChanged = !oldState || JSON.stringify(oldState.attributes.options) !== JSON.stringify(stateObj.attributes.options);
+
+    if (stateChanged || optionsChanged || !this._isRendered) {
+      this._isRendered = true;
+      this.updateKnob();
+    }
   }
 
   updateKnob() {
     const entityId = this._config.entity;
     const stateObj = this._hass.states[entityId];
-
-    if (!stateObj) {
-      this.shadowRoot.innerHTML = `<ha-card><div style="padding: 16px; color: red;">Entity ${entityId} not found</div></ha-card>`;
-      return;
-    }
+    if (!stateObj) return;
 
     const options = stateObj.attributes.options || [];
     const currentState = stateObj.state;
     const currentIndex = options.indexOf(currentState);
     const rotation = options.length ? (currentIndex / options.length) * 360 : 0;
     const configuredLabels = Array.isArray(this._config.labels) ? this._config.labels : [];
+
     const displayLabels = options.map((opt, i) => {
       return configuredLabels[i] !== undefined ? configuredLabels[i] : opt;
     });
@@ -83,10 +105,9 @@ class RotaryKnobCard extends HTMLElement {
   render(rotation, state, options, currentIndex, displayLabels, displayState) {
     if (!this.shadowRoot) return;
 
-    // knob_size = diametrul knob-ului in px; restul se scaleaza proportional din el
     const knobSize = this._config.knob_size || 140;
     const knobRadius = knobSize / 2;
-    const labelGap = this._config.label_gap ?? 34; // distanta intre marginea knob-ului si inelul de etichete
+    const labelGap = this._config.label_gap ?? 34;
     const labelRingRadius = knobRadius + labelGap;
     const labelMaxWidth = this._config.label_max_width || 92;
     const showLabels = this._config.show_labels !== false;
@@ -101,7 +122,6 @@ class RotaryKnobCard extends HTMLElement {
     const accentColor = this._config.accent_color || "#03A9F4";
     const knobColor = this._config.knob_color || "#444";
 
-    // wrapper-ul trebuie sa incapa knob-ul + inelul de etichete (doar daca etichetele sunt vizibile)
     const wrapperExtent = showLabels ? (labelRingRadius + labelMaxWidth) * 2 : knobSize;
     const wrapperWidth = showLabels ? wrapperExtent : knobSize;
     const wrapperHeight = showLabels ? Math.max(knobSize, labelRingRadius * 2 + 40) : knobSize;
@@ -114,9 +134,6 @@ class RotaryKnobCard extends HTMLElement {
         const y = labelRingRadius * Math.sin(angleRad);
         const isActive = i === currentIndex;
 
-        // cos > 0.3  -> eticheta e in dreapta -> aliniem text la stanga (creste spre dreapta)
-        // cos < -0.3 -> eticheta e in stanga  -> aliniem text la dreapta (creste spre stanga)
-        // altfel (sus/jos) -> centrat
         const cosVal = Math.cos(angleRad);
         let textAlign = "center";
         let translateX = "-50%";
