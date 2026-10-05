@@ -1,7 +1,79 @@
+/*
+ * Rotary Knob Card
+ *
+ * A tactile rotary-knob dashboard card for Home Assistant, built as a
+ * standard Custom Element (no framework). It renders a neumorphic knob
+ * that rotates to reflect the current option of an `input_select` /
+ * `select` entity and lets users pick a different option by clicking.
+ *
+ * Design notes
+ * - The DOM is only rebuilt when the option set changes; the ha-card
+ *   element persists so card-mod styles remain stable across updates.
+ * - Click events are throttled to prevent service-call flooding on
+ *   rapid clicks.
+ * - All user-supplied config values are validated and CSS/HTML-escaped
+ *   before they are injected into the DOM.
+ */
+
+const ROTARY_KNOB_TAG = "rotary-knob-card";
+const VERSION = "1.1.0";
+const MIN_CALL_INTERVAL_MS = 400;
+const ALLOWED_DOMAINS = ["input_select", "select"];
+
+/*
+ * --- Utility helpers -------------------------------------------------
+ * Pure, dependency-free functions that sanitize config values before they
+ * reach the DOM or CSS.
+ */
+
+/**
+ * Escape characters that are unsafe in HTML text and attributes so that
+ * user-provided option labels cannot inject markup.
+ */
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/[&<>"']/g, c => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    }[c]));
+}
+
+/**
+ * Coerce a config value to a finite number within [min, max].
+ * Returns `fallback` when the value is missing or not a valid number.
+ */
+function toNumber(value, fallback, min, max) {
+  if (value == null || value === "") return fallback;
+  const n = Number(value);
+  return !Number.isFinite(n) ? fallback : Math.min(max, Math.max(min, n));
+}
+
+/**
+ * Validate a CSS color / value string. Rejects characters that could
+ * break out of a style attribute (``;{}<>\``) and dangerous patterns
+ * such as `javascript:` URIs or `expression(...)` filters.
+ */
+function safeCss(value, fallback) {
+  if (typeof value !== "string" || !value.trim()) return fallback;
+  const trimmed = value.trim();
+  if (/[;{}<>\\]/.test(trimmed)) return fallback;
+  if (/javascript:|expression|url\s*\(/i.test(trimmed)) return fallback;
+  return trimmed;
+}
+
+/**
+ * Convert any supported color notation (hex, rgb/rgba) to an
+ * `rgba(...)` string with the requested alpha.
+ *
+ * For CSS variables or other complex values that cannot be converted
+ * to a literal color, fall back to `color-mix` so hover/active
+ * backgrounds stay semi-transparent instead of fully opaque.
+ */
 function colorToRgba(color, alpha = 1) {
-  if (!color) {
-    return `rgba(3, 169, 244, ${alpha})`;
-  }
+  if (!color) return `rgba(3, 169, 244, ${alpha})`;
 
   const rgbMatch = color.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([0-9.]+))?\)$/i);
   if (rgbMatch) {
@@ -11,312 +83,491 @@ function colorToRgba(color, alpha = 1) {
 
   const hex = color.replace("#", "");
   if (/^[0-9a-f]{3}$/i.test(hex)) {
-    const expanded = hex.split("").map((ch) => ch + ch).join("");
-    const r = parseInt(expanded.slice(0, 2), 16);
-    const g = parseInt(expanded.slice(2, 4), 16);
-    const b = parseInt(expanded.slice(4, 6), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    const num = parseInt(hex, 16);
+    const r = (num >> 8) & 0xF;
+    const g = (num >> 4) & 0xF;
+    const b = num & 0xF;
+    return `rgba(${(r << 4) | r}, ${(g << 4) | g}, ${(b << 4) | b}, ${alpha})`;
   }
 
   if (/^[0-9a-f]{6}$/i.test(hex)) {
-    const r = parseInt(hex.slice(0, 2), 16);
-    const g = parseInt(hex.slice(2, 4), 16);
-    const b = parseInt(hex.slice(4, 6), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    const num = parseInt(hex, 16);
+    return `rgba(${(num >> 16) & 0xFF}, ${(num >> 8) & 0xFF}, ${num & 0xFF}, ${alpha})`;
   }
 
-  return color;
+  // CSS variables, 8-digit hex, `rgb(1 2 3)` etc.: use color-mix so the
+  // hover background stays semi-transparent in the accent color.
+  return `color-mix(in srgb, ${color} ${Math.round(alpha * 100)}%, transparent)`;
 }
 
+/**
+ * Convert a linear option index to an angle in radians, with 0° at the
+ * top (12 o'clock position) and clockwise progression.
+ */
+function angleForIndex(i, count) {
+  return ((i / count) * 360 - 90) * (Math.PI / 180);
+}
+
+/*
+ * --- Custom Element -------------------------------------------------
+ */
+
 class RotaryKnobCard extends HTMLElement {
+  /* -- Lifecycle ---------------------------------------------------- */
+
+  connectedCallback() {
+    // No-op placeholder; event listeners are bound inside _build().
+  }
+
+  disconnectedCallback() {
+    // Remove event listeners to prevent memory leaks when the card is
+    // removed from the DOM. Cloning a node drops all its listeners.
+    if (this._knobEl) {
+      this._knobEl.replaceWith(this._knobEl.cloneNode(true));
+      this._knobEl = null;
+    }
+    if (this._labelEls) {
+      this._labelEls.forEach(el => el.replaceWith(el.cloneNode(true)));
+      this._labelEls = [];
+    }
+  }
+
+  /* -- Configuration ------------------------------------------------ */
+
   setConfig(config) {
-    if (!config.entity) {
+    if (!config || typeof config.entity !== "string" || !config.entity) {
       throw new Error("You must define an entity (input_select)");
     }
-    this._config = config;
-    this._hass = null;
-    this._stateObj = null;
-    this._isRendered = false;
-
-    if (!this.shadowRoot) {
-      this.attachShadow({ mode: "open" });
+    const domain = config.entity.split(".")[0];
+    if (!ALLOWED_DOMAINS.includes(domain)) {
+      throw new Error(`Entity must be an input_select or select (got '${config.entity}')`);
     }
+
+    this._config = config;
+    this._domain = domain;
+    this._stateObj = null;
+    this._optSig = null;
+    this._state = null;
+    this._unavailable = false;
+    this._lastCall = 0;
+
+    this._ensureShell();
+    // Apply immediately if hass was already set (e.g. on config change
+    // in the visual editor before the next state update arrives).
+    if (this._hass) this._applyHass();
   }
 
   set hass(hass) {
-    const entityId = this._config.entity;
-    const stateObj = hass.states[entityId];
-
-    if (!stateObj) {
-      if (!this._isRendered) {
-        this.shadowRoot.innerHTML = `<ha-card><div style="padding: 16px; color: red;">Entity ${entityId} not found</div></ha-card>`;
-        this._isRendered = true;
-      }
-      return;
-    }
-
-    const oldState = this._stateObj;
     this._hass = hass;
-    this._stateObj = stateObj;
+    this._applyHass();
+  }
 
-    // WICHTIG: Prüfen, ob sich State oder Optionen tatsächlich geändert haben.
-    // Das verhindert das ständige Neuladen und das damit verbundene Flackern!
-    const stateChanged = !oldState || oldState.state !== stateObj.state;
-    const optionsChanged = !oldState || JSON.stringify(oldState.attributes.options) !== JSON.stringify(stateObj.attributes.options);
+  /* -- Config resolution --------------------------------------------- */
 
-    if (stateChanged || optionsChanged || !this._isRendered) {
-      this._isRendered = true;
-      this.updateKnob();
+  /**
+   * Resolve all user config values into a single plain object with
+   * sensible defaults, type coercion, and sanitization. Used by both
+   * `_build` and `getCardSize` to avoid duplicating validation logic.
+   */
+  _resolveConfig() {
+    const cfg = this._config || {};
+    const knobSize = toNumber(cfg.knob_size, 140, 20, 600);
+    const knobRadius = knobSize / 2;
+    const labelGap = toNumber(cfg.label_gap, 34, 0, 300);
+    return {
+      knobSize,
+      knobRadius,
+      labelRingRadius: knobRadius + labelGap,
+      labelGap,
+      labelMaxWidth: toNumber(cfg.label_max_width, 92, 10, 400),
+      markerDistance: toNumber(cfg.marker_distance, 18, 0, 300),
+      showLabels: cfg.show_labels !== false,
+      showPositionMarkers: cfg.show_position_markers !== false,
+      showState: cfg.show_state !== false,
+      showName: cfg.show_name !== false,
+      padding: toNumber(cfg.padding, 24, 0, 200),
+      labelFontSize: toNumber(cfg.label_font_size, 12, 6, 64),
+      stateFontSize: toNumber(cfg.state_font_size, 22, 6, 96),
+      nameFontSize: toNumber(cfg.name_font_size, 16, 6, 96),
+      textColor: safeCss(cfg.text_color, "var(--primary-text-color)"),
+      accentColor: safeCss(cfg.accent_color, "#03A9F4"),
+      knobColor: safeCss(cfg.knob_color, "#444"),
+    };
+  }
+
+  /* -- DOM setup ---------------------------------------------------- */
+
+  _ensureShell() {
+    if (!this.shadowRoot) {
+      this.attachShadow({ mode: "open" });
+    }
+    if (this._card) return;
+    // The ha-card is created only once and never replaced, keeping it
+    // stable for card-mod styles across rebuilds.
+    this._styleEl = document.createElement("style");
+    this._card = document.createElement("ha-card");
+    this.shadowRoot.append(this._styleEl, this._card);
+  }
+
+  /**
+   * Render a plain error/status message inside the persistent ha-card,
+   * resetting all cached DOM references so the next rebuild starts clean.
+   *
+   * Note: `this._options` is intentionally NOT cleared here. When an entity
+   * briefly goes unavailable (losing its `options` attribute), `_applyHass`
+   * falls back to the last known options to avoid a rebuild cycle that would
+   * clear and re-render the entire card (flickering). Only the signature
+   * (`_optSig`) is reset so the next state with a different option list
+   * triggers a fresh rebuild.
+   */
+  _showMessage(text) {
+    this._styleEl.textContent = "";
+    this._card.classList.remove("unavailable");
+    this._card.innerHTML = `<div style="padding:16px;color:var(--error-color, red);">${escapeHtml(text)}</div>`;
+    this._optSig = null;
+    this._state = null;
+    this._unavailable = false;
+    this._knobEl = null;
+    this._stateEl = null;
+    this._labelEls = [];
+    this._markerEls = [];
+  }
+
+  /* -- State application & rendering --------------------------------- */
+
+  /**
+   * React to a new Home Assistant state object. The DOM is only rebuilt
+   * when the option list actually changes; otherwise just the rotation
+   * and active-label state are updated.
+   */
+  _applyHass() {
+    const hass = this._hass;
+    if (!hass || !this._config || !this._card) return;
+
+    try {
+      const stateObj = hass.states ? hass.states[this._config.entity] : undefined;
+
+      // Home Assistant replaces the state object only when it changes,
+      // so an identical reference means nothing to do.
+      if (stateObj === this._stateObj) return;
+      this._stateObj = stateObj;
+
+      if (!stateObj) {
+        this._showMessage(`Entity ${this._config.entity} not found`);
+        return;
+      }
+
+      let options = Array.isArray(stateObj.attributes && stateObj.attributes.options)
+        ? stateObj.attributes.options
+        : [];
+
+      // When the entity is unavailable or unknown the options attribute is
+      // often missing. Keep the last known options to avoid a rebuild that
+      // would clear and then re-render the whole card (= flickering).
+      if (!options.length && this._options && this._options.length) {
+        options = this._options;
+      }
+
+      // Only rebuild the DOM when the option list has changed.
+      const optSig = JSON.stringify(options);
+      if (optSig !== this._optSig) {
+        this._optSig = optSig;
+        this._options = options;
+        this._state = null;
+        this._build(options);
+      }
+
+      // Toggle the unavailable styling when availability changes.
+      const unavailable = stateObj.state === "unavailable" || stateObj.state === "unknown";
+      if (unavailable !== this._unavailable) {
+        this._unavailable = unavailable;
+        this._card.classList.toggle("unavailable", unavailable);
+      }
+
+      // Update rotation / active labels when the selected state changes.
+      if (stateObj.state !== this._state) {
+        this._state = stateObj.state;
+        this._update(stateObj.state);
+      }
+    } catch (err) {
+      console.error("rotary-knob-card: update failed", err);
     }
   }
 
-  updateKnob() {
-    const entityId = this._config.entity;
-    const stateObj = this._hass.states[entityId];
-    if (!stateObj) return;
+  /**
+   * Build the full DOM structure (knob, labels, markers, state text).
+   * Called only when the option list changes.
+   */
+  _build(options) {
+    const cfg = this._config;
+    const c = this._resolveConfig();
+    const { knobSize, knobRadius, labelRingRadius, labelMaxWidth,
+            showLabels, showState, showName, padding,
+            labelFontSize, stateFontSize, nameFontSize,
+            textColor, accentColor, knobColor } = c;
 
-    const options = stateObj.attributes.options || [];
-    const currentState = stateObj.state;
-    const currentIndex = options.indexOf(currentState);
-    const rotation = options.length ? (currentIndex / options.length) * 360 : 0;
-    const configuredLabels = Array.isArray(this._config.labels) ? this._config.labels : [];
+    // --- Display labels (allow overrides via `labels` config) -------
+    const configuredLabels = Array.isArray(cfg.labels) ? cfg.labels : [];
+    this._displayLabels = options.map((opt, i) =>
+      String(configuredLabels[i] != null ? configuredLabels[i] : opt)
+    );
 
-    const displayLabels = options.map((opt, i) => {
-      return configuredLabels[i] !== undefined ? configuredLabels[i] : opt;
-    });
-    const displayState = currentIndex >= 0 && configuredLabels[currentIndex] !== undefined
-      ? configuredLabels[currentIndex]
-      : currentState;
-
-    this.render(rotation, currentState, options, currentIndex, displayLabels, displayState);
-  }
-
-  async selectOption(newIndex) {
-    const entityId = this._config.entity;
-    const options = this._hass.states[entityId].attributes.options;
-    const newValue = options[newIndex];
-
-    await this._hass.callService("input_select", "select_option", {
-      entity_id: entityId,
-      option: newValue,
-    });
-  }
-
-  render(rotation, state, options, currentIndex, displayLabels, displayState) {
-    if (!this.shadowRoot) return;
-
-    const knobSize = this._config.knob_size || 140;
-    const knobRadius = knobSize / 2;
-    const labelGap = this._config.label_gap ?? 34;
-    const labelRingRadius = knobRadius + labelGap;
-    const labelMaxWidth = this._config.label_max_width || 92;
-    const showLabels = this._config.show_labels !== false;
-    const showPositionMarkers = this._config.show_position_markers !== false;
-    const showState = this._config.show_state !== false;
-    const showName = this._config.show_name !== false;
-    const padding = this._config.padding ?? 24;
-    const labelFontSize = this._config.label_font_size ?? 12;
-    const stateFontSize = this._config.state_font_size ?? 22;
-    const nameFontSize = this._config.name_font_size ?? 16;
-    const textColor = this._config.text_color || "var(--primary-text-color)";
-    const accentColor = this._config.accent_color || "#03A9F4";
-    const knobColor = this._config.knob_color || "#444";
-
-    const wrapperExtent = showLabels ? (labelRingRadius + labelMaxWidth) * 2 : knobSize;
-    const wrapperWidth = showLabels ? wrapperExtent : knobSize;
+    // The wrapper must be large enough for the knob plus the label ring.
+    const wrapperWidth = showLabels ? (labelRingRadius + labelMaxWidth) * 2 : knobSize;
     const wrapperHeight = showLabels ? Math.max(knobSize, labelRingRadius * 2 + 40) : knobSize;
 
-    const labelsHtml = !showLabels ? "" : displayLabels
-      .map((label, i) => {
-        const angleDeg = (i / options.length) * 360;
-        const angleRad = (angleDeg - 90) * (Math.PI / 180);
-        const x = labelRingRadius * Math.cos(angleRad);
-        const y = labelRingRadius * Math.sin(angleRad);
-        const isActive = i === currentIndex;
+    // --- Generate label and marker HTML (delegated to helpers) -------
+    const labelsHtml = this._renderLabels(options, c);
+    const markersHtml = this._renderMarkers(options, c);
 
-        const cosVal = Math.cos(angleRad);
-        let textAlign = "center";
-        let translateX = "-50%";
-        if (cosVal > 0.3) {
-          textAlign = "left";
-          translateX = "0%";
-        } else if (cosVal < -0.3) {
-          textAlign = "right";
-          translateX = "-100%";
-        }
-
-        return `
-          <div
-            class="option-label ${isActive ? "active" : ""}"
-            data-index="${i}"
-            style="
-              transform: translate(${x}px, ${y}px) translate(${translateX}, -50%);
-              text-align: ${textAlign};
-              max-width: ${labelMaxWidth}px;
-            "
-          >${label}</div>
-        `;
-      })
-      .join("");
-
-    const markersHtml = !showLabels || !showPositionMarkers ? "" : options
-      .map((_, i) => {
-        const angleDeg = (i / options.length) * 360;
-        const angleRad = (angleDeg - 90) * (Math.PI / 180);
-        const markerRadius = knobRadius + (this._config.marker_distance ?? 18);
-        const x = markerRadius * Math.cos(angleRad);
-        const y = markerRadius * Math.sin(angleRad);
-        const isActive = i === currentIndex;
-
-        return `
-          <div
-            class="position-marker ${isActive ? "active" : ""}"
-            style="transform: translate(${x}px, ${y}px) translate(-50%, -50%);"
-          ></div>
-        `;
-      })
-      .join("");
-
-    this.shadowRoot.innerHTML = `
-      <style>
-        .card-container {
-          padding: ${padding}px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-        }
-        .knob-wrapper {
-          position: relative;
-          width: ${wrapperWidth}px;
-          height: ${wrapperHeight}px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-        .knob-outer {
-          width: ${knobSize}px;
-          height: ${knobSize}px;
-          border-radius: 50%;
-          background: radial-gradient(circle, ${knobColor} 0%, #111 100%);
-          box-shadow:
-            inset 2px 2px 5px rgba(255,255,255,0.1),
-            5px 5px 15px rgba(0,0,0,0.5),
-            -2px -2px 10px rgba(255,255,255,0.05);
-          position: relative;
-          transition: transform 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
-          transform: rotate(${rotation}deg);
-          cursor: pointer;
-          flex-shrink: 0;
-        }
-        .knob-indicator {
-          position: absolute;
-          top: ${knobSize * 0.0714}px;
-          left: ${knobSize / 2 - 4}px;
-          width: 8px;
-          height: ${knobSize * 0.143}px;
-          background: ${accentColor};
-          border-radius: 4px;
-          box-shadow: 0 0 8px ${accentColor};
-        }
-        .position-marker {
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          width: 7px;
-          height: 7px;
-          border-radius: 50%;
-          background: ${accentColor};
-          opacity: 0.7;
-          box-shadow: 0 0 4px ${accentColor};
-          pointer-events: none;
-        }
-        .position-marker.active {
-          width: 9px;
-          height: 9px;
-          opacity: 1;
-        }
-        .option-label {
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          font-size: ${labelFontSize}px;
-          line-height: 1.25;
-          color: ${textColor};
-          opacity: 0.8;
-          cursor: pointer;
-          padding: 2px 5px;
-          border-radius: 4px;
-          transition: opacity 0.2s, color 0.2s, background 0.2s;
-          user-select: none;
-          word-break: break-word;
-        }
-        .option-label:hover {
-          opacity: 1;
-          background: ${colorToRgba(accentColor, 0.15)};
-        }
-        .option-label.active {
-          opacity: 1;
-          color: ${accentColor};
-          font-weight: 600;
-        }
-        .label {
-          margin-top: 4px;
-          font-size: ${stateFontSize}px;
-          font-weight: 500;
-          color: ${textColor};
-          text-align: center;
-        }
-        .sub-label {
-          font-size: ${nameFontSize}px;
-          color: ${textColor};
-          opacity: 0.8;
-        }
-      </style>
-      <ha-card>
-        <div class="card-container">
-          <div class="knob-wrapper">
-            <div class="knob-outer">
-              <div class="knob-indicator"></div>
-            </div>
-            ${markersHtml}
-            ${labelsHtml}
-          </div>
-          ${showState ? `<div class="label">${displayState || state}</div>` : ""}
-          ${showName ? `<div class="sub-label">${this._config.name || "Rotary Control"}</div>` : ""}
-        </div>
-      </ha-card>
+    // --- Styles ------------------------------------------------------
+    this._styleEl.textContent = `
+      .card-container { padding: ${padding}px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+      .knob-wrapper { position: relative; width: ${wrapperWidth}px; height: ${wrapperHeight}px; display: flex; align-items: center; justify-content: center; }
+      .knob-outer {
+        width: ${knobSize}px; height: ${knobSize}px; border-radius: 50%;
+        background: radial-gradient(circle, ${knobColor} 0%, #111 100%);
+        box-shadow: inset 2px 2px 5px rgba(255,255,255,0.1), 5px 5px 15px rgba(0,0,0,0.5), -2px -2px 10px rgba(255,255,255,0.05);
+        position: relative; transition: transform 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
+        cursor: pointer; flex-shrink: 0;
+      }
+      .knob-indicator { position: absolute; top: ${knobSize * 0.0714}px; left: ${knobSize / 2 - 4}px; width: 8px; height: ${knobSize * 0.143}px; background: ${accentColor}; border-radius: 4px; box-shadow: 0 0 8px ${accentColor}; }
+      .position-marker { position: absolute; top: 50%; left: 50%; width: 7px; height: 7px; border-radius: 50%; background: ${accentColor}; opacity: 0.7; box-shadow: 0 0 4px ${accentColor}; pointer-events: none; }
+      .position-marker.active { width: 9px; height: 9px; opacity: 1; }
+      .option-label { position: absolute; top: 50%; left: 50%; font-size: ${labelFontSize}px; line-height: 1.25; color: ${textColor}; opacity: 0.8; cursor: pointer; padding: 2px 5px; border-radius: 4px; transition: opacity 0.2s, color 0.2s, background 0.2s; user-select: none; word-break: break-word; }
+      .option-label:hover { opacity: 1; background: ${colorToRgba(accentColor, 0.15)}; }
+      .option-label.active { opacity: 1; color: ${accentColor}; font-weight: 600; }
+      .knob-outer:focus-visible, .option-label:focus-visible { outline: 2px solid ${accentColor}; outline-offset: 2px; }
+      ha-card.unavailable .knob-outer { opacity: 0.4; cursor: not-allowed; }
+      ha-card.unavailable .option-label { opacity: 0.4; cursor: not-allowed; }
+      .label { margin-top: 4px; font-size: ${stateFontSize}px; font-weight: 500; color: ${textColor}; text-align: center; }
+      .sub-label { font-size: ${nameFontSize}px; color: ${textColor}; opacity: 0.8; }
+      @media (prefers-reduced-motion: reduce) {
+        .knob-outer, .option-label { transition: none; }
+      }
     `;
 
-    const knob = this.shadowRoot.querySelector(".knob-outer");
-    knob.addEventListener("click", () => {
-      const nextIndex = (currentIndex + 1) % options.length;
-      this.selectOption(nextIndex);
-    });
+    // --- Markup ------------------------------------------------------
+    this._card.innerHTML = `
+      <div class="card-container">
+        <div class="knob-wrapper">
+          <div class="knob-outer" role="button" tabindex="0" aria-label="${escapeHtml(cfg.name || cfg.entity)}"><div class="knob-indicator"></div></div>
+          ${markersHtml}
+          ${labelsHtml}
+        </div>
+        ${showState ? `<div class="label" aria-live="polite"></div>` : ""}
+        ${showName ? `<div class="sub-label">${escapeHtml(cfg.name || "Rotary Control")}</div>` : ""}
+      </div>
+    `;
 
-    this.shadowRoot.querySelectorAll(".option-label").forEach((el) => {
-      el.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const idx = parseInt(el.getAttribute("data-index"), 10);
-        this.selectOption(idx);
-      });
+    // --- Cache DOM references and bind event listeners --------------
+    const root = this._card;
+    this._knobEl = root.querySelector(".knob-outer");
+    this._stateEl = root.querySelector(".label");
+    this._labelEls = Array.from(root.querySelectorAll(".option-label"));
+    this._markerEls = Array.from(root.querySelectorAll(".position-marker"));
+
+    // On first build, set the knob rotation instantly (no transition)
+    // so it doesn't animate from 0deg on initial load.
+    this._rot = undefined;
+
+    // Clicking the knob cycles to the next option.
+    this._bindActivate(this._knobEl, () => this._cycle());
+
+    // Clicking/labeling an option jumps straight to that option.
+    this._labelEls.forEach((el) => {
+      this._bindActivate(
+        el,
+        () => this.selectOption(parseInt(el.getAttribute("data-index"), 10)),
+        true  // stop propagation: clicking a label should not also cycle
+      );
     });
   }
 
+  /**
+   * Generate the HTML for all option labels, positioned in a ring around
+   * the knob. Text alignment adapts to the label's quadrant so labels on
+   * the right grow rightward, on the left grow leftward, and top/bottom
+   * labels stay centered.
+   */
+  _renderLabels(options, c) {
+    if (!c.showLabels) return "";
+    const { labelRingRadius, labelMaxWidth } = c;
+    return this._displayLabels.map((label, i) => {
+      const angleRad = angleForIndex(i, options.length);
+      const x = labelRingRadius * Math.cos(angleRad);
+      const y = labelRingRadius * Math.sin(angleRad);
+      const cosVal = Math.cos(angleRad);
+      let textAlign = "center";
+      let translateX = "-50%";
+      if (cosVal > 0.3) {
+        textAlign = "left";
+        translateX = "0%";
+      } else if (cosVal < -0.3) {
+        textAlign = "right";
+        translateX = "-100%";
+      }
+      const safeLabel = escapeHtml(label);
+      return `<div class="option-label" role="button" tabindex="0" data-index="${i}" aria-label="${safeLabel}" style="transform: translate(${x}px, ${y}px) translate(${translateX}, -50%); text-align: ${textAlign}; max-width: ${labelMaxWidth}px;">${safeLabel}</div>`;
+    }).join("");
+  }
+
+  /**
+   * Generate the HTML for all position markers, placed on a ring between
+   * the knob edge and the option labels.
+   */
+  _renderMarkers(options, c) {
+    if (!c.showLabels || !c.showPositionMarkers) return "";
+    const markerRadius = c.knobRadius + c.markerDistance;
+    return options.map((_, i) => {
+      const angleRad = angleForIndex(i, options.length);
+      const x = markerRadius * Math.cos(angleRad);
+      const y = markerRadius * Math.sin(angleRad);
+      return `<div class="position-marker" style="transform: translate(${x}px, ${y}px) translate(-50%, -50%);"></div>`;
+    }).join("");
+  }
+
+  /**
+   * Update the knob rotation, active label, active marker, and state text
+   * in response to a new selected value — without rebuilding the DOM.
+   *
+   * The rotation always takes the shortest angular path and accumulates
+   * full turns so the knob never snaps back (e.g. from HZN to OFF).
+   */
+  _update(state) {
+    if (!this._knobEl) return;
+    const options = this._options || [];
+    const idx = options.indexOf(state);
+
+    if (idx >= 0 && options.length) {
+      const target = (idx / options.length) * 360;
+      const first = this._rot === undefined;
+      if (first) {
+        // First render: jump to the target angle instantly.
+        this._rot = target;
+        this._knobEl.style.transition = "none";
+      } else {
+        // Compute the shortest signed delta in [-180, 180).
+        const delta = ((target - (this._rot % 360)) + 540) % 360 - 180;
+        this._rot += delta;
+      }
+      this._knobEl.style.transform = `rotate(${this._rot}deg)`;
+      if (first) {
+        // Force a reflow so the transition property change takes effect
+        // without animating the initial rotation.
+        void this._knobEl.offsetWidth;
+        this._knobEl.style.transition = "";
+      }
+    }
+
+    // Highlight the active label and marker.
+    this._labelEls.forEach((el, i) => el.classList.toggle("active", i === idx));
+    this._markerEls.forEach((el, i) => el.classList.toggle("active", i === idx));
+
+    // Update the state text, preferring a custom display label if provided.
+    if (this._stateEl) {
+      const label = idx >= 0 && this._displayLabels ? this._displayLabels[idx] : state;
+      this._stateEl.textContent = label || state;
+    }
+  }
+
+  /* -- Interaction -------------------------------------------------- */
+
+  /**
+   * Select an option by index, calling the Home Assistant service to
+   * set the entity's state. Throttled to prevent service-call flooding.
+   */
+  async selectOption(newIndex) {
+    // Validate input is a valid integer index.
+    if (!Number.isInteger(newIndex)) return;
+
+    const hass = this._hass;
+    const options = this._options || [];
+    const option = options[newIndex];
+
+    // Type safety: ensure the option is a non-empty string.
+    if (!hass || !this._config || typeof option !== "string" || option === "") return;
+    if (!this._stateObj || this._unavailable) return;
+    if (option === this._state) return;
+
+    // Throttle: rapid clicks / click series do not produce service spam.
+    const now = Date.now();
+    if (now - this._lastCall < MIN_CALL_INTERVAL_MS) return;
+    this._lastCall = now;
+
+    try {
+      await hass.callService(this._domain, "select_option", {
+        entity_id: this._config.entity,
+        option,
+      });
+    } catch (err) {
+      console.warn(`rotary-knob-card: select_option failed for ${this._config.entity}`, err);
+    }
+  }
+
+  /** Advance to the next option, wrapping around to the first. */
+  _cycle() {
+    const options = this._options || [];
+    if (!options.length) return;
+    const idx = options.indexOf(this._state);
+    // If the current state is not among the options, idx is -1 and
+    // (idx + 1) % length wraps to 0 — selecting the first option.
+    this.selectOption((idx + 1) % options.length);
+  }
+
+  /**
+   * Bind activation listeners (click + Enter/Space key) to an element.
+   * When `stop` is true, events are stopped from propagating so the
+   * parent handler (e.g. knob cycling) does not also fire.
+   */
+  _bindActivate(el, handler, stop = false) {
+    el.addEventListener("click", e => {
+      if (stop) e.stopPropagation();
+      handler();
+    });
+    el.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        if (stop) e.stopPropagation();
+        handler();
+      }
+    });
+  }
+
+  /* -- Sizing ------------------------------------------------------- */
+
+  /**
+   * Return the card size in 50-pixel units (HA Lovelace grid convention).
+   */
   getCardSize() {
-    const knobSize = this._config?.knob_size || 140;
-    const showLabels = this._config?.show_labels !== false;
-    const padding = this._config?.padding ?? 24;
-    const height = (showLabels ? Math.max(knobSize, (knobSize / 2 + (this._config?.label_gap ?? 34)) * 2 + 40) : knobSize) + padding * 2 + 60;
-    return Math.max(1, Math.round(height / 50));
+    const c = this._resolveConfig();
+    const height = c.showLabels
+      ? Math.max(c.knobSize, (c.knobSize / 2 + c.labelGap) * 2 + 40)
+      : c.knobSize;
+    return Math.max(1, Math.round((height + c.padding * 2 + 60) / 50));
+  }
+
+  /** Current version string (useful for debugging / card-mod selectors). */
+  static get version() {
+    return VERSION;
   }
 }
 
-customElements.define("rotary-knob-card", RotaryKnobCard);
+/*
+ * --- Registration ---------------------------------------------------
+ * Guard against double-loading the resource (e.g. two card registrations)
+ * which would otherwise throw a NotSupportedError.
+ */
+if (!customElements.get(ROTARY_KNOB_TAG)) {
+  customElements.define(ROTARY_KNOB_TAG, RotaryKnobCard);
+}
 
 window.customCards = window.customCards || [];
-window.customCards.push({
-  type: "rotary-knob-card",
-  name: "Rotary Knob Card",
-  description: "Rotary knob card for input_select entities",
-});
+if (!window.customCards.some((c) => c.type === ROTARY_KNOB_TAG)) {
+  window.customCards.push({
+    type: ROTARY_KNOB_TAG,
+    name: "Rotary Knob Card",
+    description: "Rotary knob card for input_select entities",
+    version: VERSION,
+  });
+}
