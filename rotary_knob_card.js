@@ -29,6 +29,8 @@ const ALLOWED_DOMAINS = ["input_select", "select"];
 /**
  * Escape characters that are unsafe in HTML text and attributes so that
  * user-provided option labels cannot inject markup.
+ * @param {string | null | undefined} value - The value to escape
+ * @returns {string} The escaped string
  */
 function escapeHtml(value) {
   return String(value ?? "")
@@ -44,6 +46,11 @@ function escapeHtml(value) {
 /**
  * Coerce a config value to a finite number within [min, max].
  * Returns `fallback` when the value is missing or not a valid number.
+ * @param {number | string | null | undefined} value - The value to coerce
+ * @param {number} fallback - The fallback value
+ * @param {number} min - The minimum allowed value
+ * @param {number} max - The maximum allowed value
+ * @returns {number} The coerced number
  */
 function toNumber(value, fallback, min, max) {
   if (value == null || value === "") return fallback;
@@ -55,11 +62,14 @@ function toNumber(value, fallback, min, max) {
  * Validate a CSS color / value string. Rejects characters that could
  * break out of a style attribute (``;{}<>\``) and dangerous patterns
  * such as `javascript:` URIs or `expression(...)` filters.
+ * @param {string | null | undefined} value - The CSS value to validate
+ * @param {string} fallback - The fallback value if validation fails
+ * @returns {string} A safe CSS string
  */
 function safeCss(value, fallback) {
   if (typeof value !== "string" || !value.trim()) return fallback;
   const trimmed = value.trim();
-  if (/[;{}<>\\]/.test(trimmed)) return fallback;
+  if (/[;{}<>\`]/.test(trimmed)) return fallback;
   if (/javascript:|expression|url\s*\(/i.test(trimmed)) return fallback;
   return trimmed;
 }
@@ -71,6 +81,9 @@ function safeCss(value, fallback) {
  * For CSS variables or other complex values that cannot be converted
  * to a literal color, fall back to `color-mix` so hover/active
  * backgrounds stay semi-transparent instead of fully opaque.
+ * @param {string | null | undefined} color - Color value to convert
+ * @param {number} alpha - Alpha channel value (0-1)
+ * @returns {string} RGBA or color-mix string
  */
 function colorToRgba(color, alpha = 1) {
   if (!color) return `rgba(3, 169, 244, ${alpha})`;
@@ -103,9 +116,54 @@ function colorToRgba(color, alpha = 1) {
 /**
  * Convert a linear option index to an angle in radians, with 0° at the
  * top (12 o'clock position) and clockwise progression.
+ * @param {number} i - The option index
+ * @param {number} count - Total number of options
+ * @returns {number} Angle in radians
  */
 function angleForIndex(i, count) {
   return ((i / count) * 360 - 90) * (Math.PI / 180);
+}
+
+/**
+ * Generate CSS string for the card based on resolved configuration.
+ * @param {Object} c - The resolved configuration object
+ * @returns {string} CSS string for the card
+ */
+function generateCardCss(c) {
+  const { knobSize, labelRingRadius, labelMaxWidth,
+          showLabels, padding,
+          labelFontSize, stateFontSize, nameFontSize,
+          textColor, accentColor, knobColor } = c;
+
+  // Calculate wrapper dimensions
+  const wrapperWidth = showLabels ? (labelRingRadius + labelMaxWidth) * 2 : knobSize;
+  const wrapperHeight = showLabels ? Math.max(knobSize, labelRingRadius * 2 + 40) : knobSize;
+
+  return `
+    .card-container { padding: ${padding}px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .knob-wrapper { position: relative; width: ${wrapperWidth}px; height: ${wrapperHeight}px; display: flex; align-items: center; justify-content: center; }
+    .knob-outer {
+      width: ${knobSize}px; height: ${knobSize}px; border-radius: 50%;
+      background: radial-gradient(circle, ${knobColor} 0%, #111 100%);
+      box-shadow: inset 2px 2px 5px rgba(255,255,255,0.1), 5px 5px 15px rgba(0,0,0,0.5), -2px -2px 10px rgba(255,255,255,0.05);
+      position: relative; transition: transform 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
+      cursor: pointer; flex-shrink: 0;
+    }
+    .knob-indicator { position: absolute; top: ${knobSize * 0.0714}px; left: ${knobSize / 2 - 4}px; width: 8px; height: ${knobSize * 0.143}px; background: ${accentColor}; border-radius: 4px; box-shadow: 0 0 8px ${accentColor}; }
+    .position-marker { position: absolute; top: 50%; left: 50%; width: 7px; height: 7px; border-radius: 50%; background: ${accentColor}; opacity: 0.7; box-shadow: 0 0 4px ${accentColor}; pointer-events: none; }
+    .position-marker.active { width: 9px; height: 9px; opacity: 1; }
+    .option-label { position: absolute; top: 50%; left: 50%; font-size: ${labelFontSize}px; line-height: 1.25; color: ${textColor}; opacity: 0.8; cursor: pointer; padding: 2px 5px; border-radius: 4px; transition: opacity 0.2s, color 0.2s, background 0.2s; user-select: none; word-break: break-word; }
+    .option-label:hover { opacity: 1; background: ${colorToRgba(accentColor, 0.15)}; }
+    .option-label.active { opacity: 1; color: ${accentColor}; font-weight: 600; }
+    .knob-outer:focus-visible, .option-label:focus-visible { outline: 2px solid ${accentColor}; outline-offset: 2px; }
+    ha-card.unavailable .knob-outer { opacity: 0.4; cursor: not-allowed; }
+    ha-card.unavailable .option-label { opacity: 0.4; cursor: not-allowed; }
+    .label { margin-top: 4px; font-size: ${stateFontSize}px; font-weight: 500; color: ${textColor}; text-align: center; }
+    .sub-label { font-size: ${nameFontSize}px; color: ${textColor}; opacity: 0.8; }
+    @media (prefers-reduced-motion: reduce) {
+      .knob-outer, .option-label { transition: none; }
+    }
+  `;
 }
 
 /*
@@ -115,13 +173,19 @@ function angleForIndex(i, count) {
 class RotaryKnobCard extends HTMLElement {
   /* -- Lifecycle ---------------------------------------------------- */
 
+  /**
+   * Called when the element is added to the DOM.
+   */
   connectedCallback() {
     // No-op placeholder; event listeners are bound inside _build().
   }
 
+  /**
+   * Called when the element is removed from the DOM.
+   * Removes event listeners to prevent memory leaks when the card is
+   * removed from the DOM. Cloning a node drops all its listeners.
+   */
   disconnectedCallback() {
-    // Remove event listeners to prevent memory leaks when the card is
-    // removed from the DOM. Cloning a node drops all its listeners.
     if (this._knobEl) {
       this._knobEl.replaceWith(this._knobEl.cloneNode(true));
       this._knobEl = null;
@@ -134,6 +198,12 @@ class RotaryKnobCard extends HTMLElement {
 
   /* -- Configuration ------------------------------------------------ */
 
+  /**
+   * Configure the card with the provided config.
+   * @param {Object} config - The card configuration object
+   * @param {string} config.entity - The entity ID (input_select or select)
+   * @throws {Error} When entity is invalid or not in ALLOWED_DOMAINS
+   */
   setConfig(config) {
     if (!config || typeof config.entity !== "string" || !config.entity) {
       throw new Error("You must define an entity (input_select)");
@@ -157,6 +227,10 @@ class RotaryKnobCard extends HTMLElement {
     if (this._hass) this._applyHass();
   }
 
+  /**
+   * Set the Home Assistant state object.
+   * @param {Object} hass - Home Assistant state object
+   */
   set hass(hass) {
     this._hass = hass;
     this._applyHass();
@@ -166,44 +240,56 @@ class RotaryKnobCard extends HTMLElement {
 
   /**
    * Resolve all user config values into a single plain object with
-   * sensible defaults, type coercion, and sanitization. Used by both
-   * `_build` and `getCardSize` to avoid duplicating validation logic.
+   * sensible defaults, type coercion, and sanitization.
+   * @returns {Object} Resolved and sanitized config
    */
   _resolveConfig() {
     const cfg = this._config || {};
-    const knobSize = toNumber(cfg.knob_size, 140, 20, 600);
+    
+    // Helper to get number config with validation
+    const getNum = (key, fallback, min, max) => toNumber(cfg[key], fallback, min, max);
+    // Helper to get boolean config (false if undefined/null)
+    const getBool = (key) => cfg[key] !== false;
+    // Helper to get CSS config with validation
+    const getCss = (key, fallback) => safeCss(cfg[key], fallback);
+
+    const knobSize = getNum('knob_size', 140, 20, 600);
     const knobRadius = knobSize / 2;
-    const labelGap = toNumber(cfg.label_gap, 34, 0, 300);
+    const labelGap = getNum('label_gap', 34, 0, 300);
+
     return {
       knobSize,
       knobRadius,
       labelRingRadius: knobRadius + labelGap,
       labelGap,
-      labelMaxWidth: toNumber(cfg.label_max_width, 92, 10, 400),
-      markerDistance: toNumber(cfg.marker_distance, 18, 0, 300),
-      showLabels: cfg.show_labels !== false,
-      showPositionMarkers: cfg.show_position_markers !== false,
-      showState: cfg.show_state !== false,
-      showName: cfg.show_name !== false,
-      padding: toNumber(cfg.padding, 24, 0, 200),
-      labelFontSize: toNumber(cfg.label_font_size, 12, 6, 64),
-      stateFontSize: toNumber(cfg.state_font_size, 22, 6, 96),
-      nameFontSize: toNumber(cfg.name_font_size, 16, 6, 96),
-      textColor: safeCss(cfg.text_color, "var(--primary-text-color)"),
-      accentColor: safeCss(cfg.accent_color, "#03A9F4"),
-      knobColor: safeCss(cfg.knob_color, "#444"),
+      labelMaxWidth: getNum('label_max_width', 92, 10, 400),
+      markerDistance: getNum('marker_distance', 18, 0, 300),
+      showLabels: getBool('show_labels'),
+      showPositionMarkers: getBool('show_position_markers'),
+      showState: getBool('show_state'),
+      showName: getBool('show_name'),
+      padding: getNum('padding', 24, 0, 200),
+      labelFontSize: getNum('label_font_size', 12, 6, 64),
+      stateFontSize: getNum('state_font_size', 22, 6, 96),
+      nameFontSize: getNum('name_font_size', 16, 6, 96),
+      textColor: getCss('text_color', 'var(--primary-text-color)'),
+      accentColor: getCss('accent_color', '#03A9F4'),
+      knobColor: getCss('knob_color', '#444'),
     };
   }
 
   /* -- DOM setup ---------------------------------------------------- */
 
+  /**
+   * Ensure the shadow DOM and card shell are created.
+   * The ha-card element persists so card-mod styles remain stable
+   * across rebuilds.
+   */
   _ensureShell() {
     if (!this.shadowRoot) {
       this.attachShadow({ mode: "open" });
     }
     if (this._card) return;
-    // The ha-card is created only once and never replaced, keeping it
-    // stable for card-mod styles across rebuilds.
     this._styleEl = document.createElement("style");
     this._card = document.createElement("ha-card");
     this.shadowRoot.append(this._styleEl, this._card);
@@ -219,6 +305,8 @@ class RotaryKnobCard extends HTMLElement {
    * clear and re-render the entire card (flickering). Only the signature
    * (`_optSig`) is reset so the next state with a different option list
    * triggers a fresh rebuild.
+   * @param {string} text - The message to display
+   * @returns {void}
    */
   _showMessage(text) {
     this._styleEl.textContent = "";
@@ -245,7 +333,7 @@ class RotaryKnobCard extends HTMLElement {
     if (!hass || !this._config || !this._card) return;
 
     try {
-      const stateObj = hass.states ? hass.states[this._config.entity] : undefined;
+      const stateObj = hass.states?.[this._config.entity];
 
       // Home Assistant replaces the state object only when it changes,
       // so an identical reference means nothing to do.
@@ -257,7 +345,7 @@ class RotaryKnobCard extends HTMLElement {
         return;
       }
 
-      let options = Array.isArray(stateObj.attributes && stateObj.attributes.options)
+      let options = Array.isArray(stateObj.attributes?.options)
         ? stateObj.attributes.options
         : [];
 
@@ -292,19 +380,17 @@ class RotaryKnobCard extends HTMLElement {
     } catch (err) {
       console.error("rotary-knob-card: update failed", err);
     }
-  }
+   }
 
   /**
    * Build the full DOM structure (knob, labels, markers, state text).
    * Called only when the option list changes.
+   * @param {string[]} options - The list of option values
    */
   _build(options) {
     const cfg = this._config;
     const c = this._resolveConfig();
-    const { knobSize, knobRadius, labelRingRadius, labelMaxWidth,
-            showLabels, showState, showName, padding,
-            labelFontSize, stateFontSize, nameFontSize,
-            textColor, accentColor, knobColor } = c;
+    const { showLabels, showState, showName } = c;
 
     // --- Display labels (allow overrides via `labels` config) -------
     const configuredLabels = Array.isArray(cfg.labels) ? cfg.labels : [];
@@ -312,42 +398,12 @@ class RotaryKnobCard extends HTMLElement {
       String(configuredLabels[i] != null ? configuredLabels[i] : opt)
     );
 
-    // The wrapper must be large enough for the knob plus the label ring.
-    const wrapperWidth = showLabels ? (labelRingRadius + labelMaxWidth) * 2 : knobSize;
-    const wrapperHeight = showLabels ? Math.max(knobSize, labelRingRadius * 2 + 40) : knobSize;
-
-    // --- Generate label and marker HTML (delegated to helpers) -------
+    // --- Generate CSS and label/marker HTML --------------------------
+    this._styleEl.textContent = generateCardCss(c);
     const labelsHtml = this._renderLabels(options, c);
     const markersHtml = this._renderMarkers(options, c);
 
-    // --- Styles ------------------------------------------------------
-    this._styleEl.textContent = `
-      .card-container { padding: ${padding}px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-      .knob-wrapper { position: relative; width: ${wrapperWidth}px; height: ${wrapperHeight}px; display: flex; align-items: center; justify-content: center; }
-      .knob-outer {
-        width: ${knobSize}px; height: ${knobSize}px; border-radius: 50%;
-        background: radial-gradient(circle, ${knobColor} 0%, #111 100%);
-        box-shadow: inset 2px 2px 5px rgba(255,255,255,0.1), 5px 5px 15px rgba(0,0,0,0.5), -2px -2px 10px rgba(255,255,255,0.05);
-        position: relative; transition: transform 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
-        cursor: pointer; flex-shrink: 0;
-      }
-      .knob-indicator { position: absolute; top: ${knobSize * 0.0714}px; left: ${knobSize / 2 - 4}px; width: 8px; height: ${knobSize * 0.143}px; background: ${accentColor}; border-radius: 4px; box-shadow: 0 0 8px ${accentColor}; }
-      .position-marker { position: absolute; top: 50%; left: 50%; width: 7px; height: 7px; border-radius: 50%; background: ${accentColor}; opacity: 0.7; box-shadow: 0 0 4px ${accentColor}; pointer-events: none; }
-      .position-marker.active { width: 9px; height: 9px; opacity: 1; }
-      .option-label { position: absolute; top: 50%; left: 50%; font-size: ${labelFontSize}px; line-height: 1.25; color: ${textColor}; opacity: 0.8; cursor: pointer; padding: 2px 5px; border-radius: 4px; transition: opacity 0.2s, color 0.2s, background 0.2s; user-select: none; word-break: break-word; }
-      .option-label:hover { opacity: 1; background: ${colorToRgba(accentColor, 0.15)}; }
-      .option-label.active { opacity: 1; color: ${accentColor}; font-weight: 600; }
-      .knob-outer:focus-visible, .option-label:focus-visible { outline: 2px solid ${accentColor}; outline-offset: 2px; }
-      ha-card.unavailable .knob-outer { opacity: 0.4; cursor: not-allowed; }
-      ha-card.unavailable .option-label { opacity: 0.4; cursor: not-allowed; }
-      .label { margin-top: 4px; font-size: ${stateFontSize}px; font-weight: 500; color: ${textColor}; text-align: center; }
-      .sub-label { font-size: ${nameFontSize}px; color: ${textColor}; opacity: 0.8; }
-      @media (prefers-reduced-motion: reduce) {
-        .knob-outer, .option-label { transition: none; }
-      }
-    `;
-
-    // --- Markup ------------------------------------------------------
+     // --- Markup ------------------------------------------------------
     this._card.innerHTML = `
       <div class="card-container">
         <div class="knob-wrapper">
@@ -389,32 +445,31 @@ class RotaryKnobCard extends HTMLElement {
    * the knob. Text alignment adapts to the label's quadrant so labels on
    * the right grow rightward, on the left grow leftward, and top/bottom
    * labels stay centered.
+   * @param {string[]} options - The list of option values
+   * @param {Object} c - The resolved configuration object
+   * @returns {string} HTML string for the labels
    */
-  _renderLabels(options, c) {
-    if (!c.showLabels) return "";
-    const { labelRingRadius, labelMaxWidth } = c;
-    return this._displayLabels.map((label, i) => {
-      const angleRad = angleForIndex(i, options.length);
-      const x = labelRingRadius * Math.cos(angleRad);
-      const y = labelRingRadius * Math.sin(angleRad);
-      const cosVal = Math.cos(angleRad);
-      let textAlign = "center";
-      let translateX = "-50%";
-      if (cosVal > 0.3) {
-        textAlign = "left";
-        translateX = "0%";
-      } else if (cosVal < -0.3) {
-        textAlign = "right";
-        translateX = "-100%";
-      }
-      const safeLabel = escapeHtml(label);
-      return `<div class="option-label" role="button" tabindex="0" data-index="${i}" aria-label="${safeLabel}" style="transform: translate(${x}px, ${y}px) translate(${translateX}, -50%); text-align: ${textAlign}; max-width: ${labelMaxWidth}px;">${safeLabel}</div>`;
-    }).join("");
-  }
+   _renderLabels(options, c) {
+     if (!c.showLabels) return "";
+     const { labelRingRadius, labelMaxWidth } = c;
+     return this._displayLabels.map((label, i) => {
+       const angleRad = angleForIndex(i, options.length);
+       const x = labelRingRadius * Math.cos(angleRad);
+       const y = labelRingRadius * Math.sin(angleRad);
+       const cosVal = Math.cos(angleRad);
+       const textAlign = cosVal > 0.3 ? "left" : (cosVal < -0.3 ? "right" : "center");
+       const translateX = cosVal > 0.3 ? "0%" : (cosVal < -0.3 ? "-100%" : "-50%");
+       const safeLabel = escapeHtml(label);
+       return `<div class="option-label" role="button" tabindex="0" data-index="${i}" aria-label="${safeLabel}" style="transform: translate(${x}px, ${y}px) translate(${translateX}, -50%); text-align: ${textAlign}; max-width: ${labelMaxWidth}px;">${safeLabel}</div>`;
+     }).join("");
+   }
 
   /**
    * Generate the HTML for all position markers, placed on a ring between
    * the knob edge and the option labels.
+   * @param {string[]} options - The list of option values
+   * @param {Object} c - The resolved configuration object
+   * @returns {string} HTML string for the markers
    */
   _renderMarkers(options, c) {
     if (!c.showLabels || !c.showPositionMarkers) return "";
@@ -429,10 +484,10 @@ class RotaryKnobCard extends HTMLElement {
 
   /**
    * Update the knob rotation, active label, active marker, and state text
-   * in response to a new selected value — without rebuilding the DOM.
-   *
+   * in response to a new selected value, without rebuilding the DOM.
    * The rotation always takes the shortest angular path and accumulates
    * full turns so the knob never snaps back (e.g. from HZN to OFF).
+   * @param {string} state - The new selected state
    */
   _update(state) {
     if (!this._knobEl) return;
@@ -476,17 +531,20 @@ class RotaryKnobCard extends HTMLElement {
   /**
    * Select an option by index, calling the Home Assistant service to
    * set the entity's state. Throttled to prevent service-call flooding.
+   * @param {number} newIndex - The index of the option to select
+   * @returns {Promise<void>}
    */
   async selectOption(newIndex) {
     // Validate input is a valid integer index.
     if (!Number.isInteger(newIndex)) return;
 
     const hass = this._hass;
+    const config = this._config;
     const options = this._options || [];
     const option = options[newIndex];
 
     // Type safety: ensure the option is a non-empty string.
-    if (!hass || !this._config || typeof option !== "string" || option === "") return;
+    if (!hass || !config || typeof option !== "string" || option === "") return;
     if (!this._stateObj || this._unavailable) return;
     if (option === this._state) return;
 
@@ -505,7 +563,9 @@ class RotaryKnobCard extends HTMLElement {
     }
   }
 
-  /** Advance to the next option, wrapping around to the first. */
+  /**
+   * Advance to the next option, wrapping around to the first.
+   */
   _cycle() {
     const options = this._options || [];
     if (!options.length) return;
@@ -519,6 +579,9 @@ class RotaryKnobCard extends HTMLElement {
    * Bind activation listeners (click + Enter/Space key) to an element.
    * When `stop` is true, events are stopped from propagating so the
    * parent handler (e.g. knob cycling) does not also fire.
+   * @param {HTMLElement} el - The element to bind to
+   * @param {Function} handler - The click handler function
+   * @param {boolean} stop - Whether to stop event propagation
    */
   _bindActivate(el, handler, stop = false) {
     el.addEventListener("click", e => {
@@ -538,6 +601,7 @@ class RotaryKnobCard extends HTMLElement {
 
   /**
    * Return the card size in 50-pixel units (HA Lovelace grid convention).
+   * @returns {number} Card height in grid units
    */
   getCardSize() {
     const c = this._resolveConfig();
@@ -547,7 +611,10 @@ class RotaryKnobCard extends HTMLElement {
     return Math.max(1, Math.round((height + c.padding * 2 + 60) / 50));
   }
 
-  /** Current version string (useful for debugging / card-mod selectors). */
+  /**
+   * Current version string (useful for debugging / card-mod selectors).
+   * @returns {string} Version string
+   */
   static get version() {
     return VERSION;
   }
