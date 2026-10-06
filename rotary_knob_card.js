@@ -16,7 +16,7 @@
  */
 
 const ROTARY_KNOB_TAG = "rotary-knob-card";
-const VERSION = "1.1.0";
+const VERSION = "1.1.1";
 const MIN_CALL_INTERVAL_MS = 400;
 const ALLOWED_DOMAINS = ["input_select", "select"];
 
