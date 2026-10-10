@@ -1,6 +1,6 @@
 {
   "name": "rotary-knob-card",
-  "version": "1.2.0",
+  "version": "1.2.2",
   "private": true,
   "type": "module",
   "description": "A tactile rotary knob dashboard card for Home Assistant input_select entities",

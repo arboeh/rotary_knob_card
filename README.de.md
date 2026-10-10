@@ -30,7 +30,8 @@ Die Karte unterstützt Standard-Home-Assistant-Card-Actions: `tap_action`,
 - **Action-Routing**: Konfigurierbare `tap_action`, `hold_action` und
   `double_tap_action` gemäß der HA Card Action Konvention.
 - **Sicherheitsfokussiert**: Alle Konfigurationswerte werden HTML/CSS-escaped;
-  Service-Aufrufe werden gedrosselt, um Überflutung zu verhindern.
+  Service-Aufrufe werden gedrosselt, um Überflutung zu verhindern; URL-Aktionen
+  sind auf `http:` und `https:`-Protokolle beschränkt.
 - **Keine Abhängigkeiten**: Reines Custom Element — kein Framework erforderlich.
 
 ## Installation
@@ -99,7 +100,8 @@ name: "Wohnzimmer"
 | `tap_action`             | object   | —                           | Aktion beim Einfach-Tap (ohne `double_tap_action`).                      |
 | `hold_action`            | object   | —                           | Aktion beim Langdruck.                                                   |
 | `double_tap_action`      | object   | —                           | Aktion beim Doppel-Tap. Ohne sie wird ein Tap sofort ausgelöst.          |
-| `labels`                 | list     | —                           | Benutzerdefinierte Beschriftungen für Optionen (1:1 zugeordnet).         |
+| `debug`                  | boolean  | `false`                     | Aktiviert Debug-Logging in der Browser-Konsole.                        |
+| `labels``                 | list     | —                           | Benutzerdefinierte Beschriftungen für Optionen (1:1 zugeordnet).         |
 
 ### Beispiele
 
@@ -160,8 +162,8 @@ Aktionen folgen der [Home Assistant Card Action Konvention](https://github.com/h
 type: custom:rotary-knob-card
 entity: input_select.wohnzimmer_modus
 tap_action:
-  action: call-service
-  service: light.toggle
+  action: perform-action
+  perform_action: light.toggle
   data:
     entity_id: light.wohnzimmer
 hold_action:
@@ -176,11 +178,12 @@ double_tap_action:
 - `hold_action` unterdrückt den Tap, wenn die Langdruck-Schwelle überschritten wird.
 - **Timing:** `LONG_PRESS_MS` = 500 ms (Langdruck), `DOUBLE_TAP_MS` = 300 ms
   (Doppel-Tap-Erkennung).
-- **Touch-Unterstützung:** Langdruck und Doppel-Tap funktionieren auf
-  Touch-Geräten über `touchstart`/`touchend`/`touchcancel`.
+- **Touch-Unterstützung:** Gesten basieren auf Pointer Events; `touch-action: manipulation`
+  verhindert Zoom beim Doppel-Tap.
 - **Tastaturunterstützung:** Drücke <kbd>Enter</kbd> oder <kbd>Space</kbd>,
-  um die `tap_action` auszulösen (Langdruck und Doppel-Tap werden per
-  Tastatur nicht ausgelöst).
+  um die `tap_action` auszulösen.
+- **Sicherheit:** URL-Aktionen sind auf `http:` und `https:`-Protokolle beschränkt;
+  alle Konfigurationswerte werden HTML/CSS-escaped.
 
 ## Entwicklung
 

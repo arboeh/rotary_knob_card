@@ -8,9 +8,12 @@ const helpers = loadCard();
 const {
   VERSION,
   MIN_CALL_INTERVAL_MS,
+  LONG_PRESS_MS,
+  DOUBLE_TAP_MS,
   escapeHtml,
   toNumber,
   safeCss,
+  safeUrl,
   colorToRgba,
   angleForIndex,
   generateCardCss,
@@ -131,6 +134,25 @@ describe("Utility helpers", () => {
       expect(safeCss(null, fb)).toBe(fb);
       expect(safeCss(123, fb)).toBe(fb);
       expect(safeCss("   ", fb)).toBe(fb);
+    });
+  });
+
+  describe("safeUrl", () => {
+    it("accepts http URLs", () => {
+      expect(safeUrl("https://example.com")).toBe("https://example.com");
+      expect(safeUrl("http://example.com")).toBe("http://example.com");
+    });
+
+    it("rejects non-http protocols", () => {
+      expect(safeUrl("javascript:alert(1)")).toBeNull();
+      expect(safeUrl("data:text/html,evil")).toBeNull();
+    });
+
+    it("rejects invalid URLs", () => {
+      expect(safeUrl("not a url")).toBeNull();
+      expect(safeUrl("")).toBeNull();
+      expect(safeUrl(null)).toBeNull();
+      expect(safeUrl(undefined)).toBeNull();
     });
   });
 
@@ -517,6 +539,406 @@ describe("Interaction", () => {
         expect.stringContaining("select_option failed"),
         expect.any(Error)
       );
+    });
+  });
+});
+
+describe("Gestures", () => {
+  beforeEach(() => loadCard());
+
+  describe("tap", () => {
+    it("tap without double_tap_action fires immediately", () => {
+      vi.useFakeTimers();
+      const hass = makeHass("input_select.test", "a", ["a", "b", "c"]);
+      const card = createCard({ entity: "input_select.test" }, hass);
+      const knob = card.shadowRoot.querySelector(".knob-outer");
+
+      knob.click();
+
+      expect(hass.callService).toHaveBeenCalledWith("input_select", "select_option", {
+        entity_id: "input_select.test",
+        option: "b",
+      });
+    });
+  });
+
+  describe("double-tap", () => {
+    it("two quick clicks fire double_tap_action only once", () => {
+      vi.useFakeTimers();
+      const hass = makeHass("input_select.test", "a", ["a", "b", "c"]);
+      const card = createCard(
+        { entity: "input_select.test", double_tap_action: { action: "none" } },
+        hass
+      );
+      // Replace the double-tap action handler with a spy.
+      // Since double_tap_action is {action: "none"}, we mock _handleAction
+      // to call our spy.
+      const handleAction = vi.spyOn(card, "_handleAction");
+      const knob = card.shadowRoot.querySelector(".knob-outer");
+
+      knob.click();
+      knob.click();
+
+      vi.runAllTimers();
+
+      expect(handleAction).toHaveBeenCalledWith({ action: "none" });
+    });
+
+    it("single click followed by timeout fires tap (delayed)", () => {
+      vi.useFakeTimers();
+      const hass = makeHass("input_select.test", "a", ["a", "b", "c"]);
+      const card = createCard(
+        { entity: "input_select.test", double_tap_action: { action: "none" } },
+        hass
+      );
+      const knob = card.shadowRoot.querySelector(".knob-outer");
+
+      knob.click();
+      expect(hass.callService).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(DOUBLE_TAP_MS + 10);
+
+      // The delayed tap cycles to next option
+      expect(hass.callService).toHaveBeenCalledWith("input_select", "select_option", {
+        entity_id: "input_select.test",
+        option: "b",
+      });
+    });
+  });
+
+  describe("hold", () => {
+    it("pointerup before LONG_PRESS_MS cancels hold", () => {
+      vi.useFakeTimers();
+      const hass = makeHass("input_select.test", "a", ["a", "b"]);
+      const card = createCard(
+        { entity: "input_select.test", hold_action: { action: "none" } },
+        hass
+      );
+      const handleAction = vi.spyOn(card, "_handleAction");
+      const knob = card.shadowRoot.querySelector(".knob-outer");
+
+      knob.dispatchEvent(new PointerEvent("pointerdown", { button: 0 }));
+
+      vi.advanceTimersByTime(LONG_PRESS_MS - 50);
+
+      knob.dispatchEvent(new PointerEvent("pointerup"));
+
+      vi.advanceTimersByTime(LONG_PRESS_MS);
+
+      expect(handleAction).not.toHaveBeenCalled();
+    });
+
+    it("hold fires after LONG_PRESS_MS and suppresses subsequent click", () => {
+      vi.useFakeTimers();
+      const hass = makeHass("input_select.test", "a", ["a", "b"]);
+      const card = createCard(
+        { entity: "input_select.test", hold_action: { action: "none" } },
+        hass
+      );
+      const handleAction = vi.spyOn(card, "_handleAction");
+      const knob = card.shadowRoot.querySelector(".knob-outer");
+
+      knob.dispatchEvent(new PointerEvent("pointerdown", { button: 0 }));
+
+      vi.advanceTimersByTime(LONG_PRESS_MS + 10);
+
+      expect(handleAction).toHaveBeenCalledTimes(1);
+
+      // Click after hold should be suppressed
+      knob.click();
+
+      expect(hass.callService).not.toHaveBeenCalled();
+    });
+
+    it("tap still works after hold fires (holdFired reset)", () => {
+      vi.useFakeTimers();
+      const hass = makeHass("input_select.test", "a", ["a", "b", "c"]);
+      const card = createCard(
+        { entity: "input_select.test", hold_action: { action: "none" } },
+        hass
+      );
+      const knob = card.shadowRoot.querySelector(".knob-outer");
+
+      // Hold sequence
+      knob.dispatchEvent(new PointerEvent("pointerdown", { button: 0 }));
+      vi.advanceTimersByTime(LONG_PRESS_MS + 10);
+      // Hold fires - holdFired = true
+      expect(hass.callService).not.toHaveBeenCalled();
+
+      // Click after hold is suppressed (holdFired reset to false)
+      knob.click();
+      expect(hass.callService).not.toHaveBeenCalled();
+
+      // New tap: pointerdown resets holdFired, pointerup cancels hold timer
+      knob.dispatchEvent(new PointerEvent("pointerdown", { button: 0 }));
+      knob.dispatchEvent(new PointerEvent("pointerup"));
+      knob.click();
+
+      expect(hass.callService).toHaveBeenCalledWith("input_select", "select_option", {
+        entity_id: "input_select.test",
+        option: "b",
+      });
+    });
+  });
+});
+
+describe("Actions", () => {
+  beforeEach(() => loadCard());
+
+  it("perform-action calls callService with domain, service, data, target", () => {
+    const hass = makeHass("input_select.test", "a", ["a", "b"]);
+    const card = createCard(
+      {
+        entity: "input_select.test",
+        tap_action: {
+          action: "perform-action",
+          perform_action: "light.toggle",
+          data: { transition: 0 },
+          target: { entity_id: "light.living_room" },
+        },
+      },
+      hass
+    );
+
+    card.shadowRoot.querySelector(".knob-outer").click();
+
+    expect(hass.callService).toHaveBeenCalledWith(
+      "light",
+      "toggle",
+      { transition: 0 },
+      { entity_id: "light.living_room" }
+    );
+  });
+
+  it("call-service (alias) works the same as perform-action", () => {
+    const hass = makeHass("input_select.test", "a", ["a", "b"]);
+    const card = createCard(
+      {
+        entity: "input_select.test",
+        tap_action: {
+          action: "call-service",
+          service: "light.toggle",
+          service_data: { entity_id: "light.kitchen" },
+        },
+      },
+      hass
+    );
+
+    card.shadowRoot.querySelector(".knob-outer").click();
+
+    expect(hass.callService).toHaveBeenCalledWith(
+      "light",
+      "toggle",
+      { entity_id: "light.kitchen" },
+      undefined
+    );
+  });
+
+  it("navigate dispatches location-changed on window", () => {
+    const pushState = vi.spyOn(history, "pushState").mockImplementation(() => {});
+    const dispatch = vi.spyOn(window, "dispatchEvent");
+
+    const hass = makeHass("input_select.test", "a", ["a", "b"]);
+    const card = createCard(
+      {
+        entity: "input_select.test",
+        tap_action: {
+          action: "navigate",
+          navigation_path: "/lovelace/dashboard",
+        },
+      },
+      hass
+    );
+
+    card.shadowRoot.querySelector(".knob-outer").click();
+
+    expect(pushState).toHaveBeenCalledWith(null, "", "/lovelace/dashboard");
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "location-changed" })
+    );
+    pushState.mockRestore();
+    dispatch.mockRestore();
+  });
+
+  it("more-info falls back to card entity when not in action config", () => {
+    const hass = makeHass("input_select.test", "a", ["a", "b"]);
+    const card = createCard(
+      {
+        entity: "input_select.test",
+        tap_action: {
+          action: "more-info",
+        },
+      },
+      hass
+    );
+
+    const knob = card.shadowRoot.querySelector(".knob-outer");
+    const spy = vi.spyOn(card, "dispatchEvent");
+
+    knob.click();
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "hass-more-info",
+        detail: expect.objectContaining({ entityId: "input_select.test" }),
+      })
+    );
+    spy.mockRestore();
+  });
+
+  it("toggle without entity warns", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const hass = makeHass("input_select.test", "a", ["a", "b"]);
+    const card = createCard(
+      {
+        entity: "input_select.test",
+        tap_action: { action: "toggle" },
+      },
+      hass
+    );
+
+    card.shadowRoot.querySelector(".knob-outer").click();
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("toggle action needs 'entity'")
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("unknown action warns", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const hass = makeHass("input_select.test", "a", ["a", "b"]);
+    const card = createCard(
+      {
+        entity: "input_select.test",
+        tap_action: { action: "unknown-thing" },
+      },
+      hass
+    );
+
+    card.shadowRoot.querySelector(".knob-outer").click();
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("unknown action 'unknown-thing'")
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("url action blocks non-http schemes", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const hass = makeHass("input_select.test", "a", ["a", "b"]);
+    const card = createCard(
+      {
+        entity: "input_select.test",
+        tap_action: { action: "url", url_path: "javascript:alert(1)" },
+      },
+      hass
+    );
+
+    card.shadowRoot.querySelector(".knob-outer").click();
+
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("blocked url with protocol 'javascript:'")
+    );
+    warnSpy.mockRestore();
+    openSpy.mockRestore();
+  });
+
+  it("url action blocks invalid URLs", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const hass = makeHass("input_select.test", "a", ["a", "b"]);
+    const card = createCard(
+      {
+        entity: "input_select.test",
+        tap_action: { action: "url", url_path: "not-a-url" },
+      },
+      hass
+    );
+
+    card.shadowRoot.querySelector(".knob-outer").click();
+
+    expect(openSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+    openSpy.mockRestore();
+  });
+
+  it("debug mode enables _log", () => {
+    const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+    const hass = makeHass("input_select.test", "a", ["a", "b"]);
+    const card = createCard(
+      { entity: "input_select.test", debug: true, tap_action: { action: "none" } },
+      hass
+    );
+
+    card.shadowRoot.querySelector(".knob-outer").click();
+
+    expect(debugSpy).toHaveBeenCalledWith("[rotary-knob-card]", "tap");
+    debugSpy.mockRestore();
+  });
+
+  it("perform-action without service id warns", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const hass = makeHass("input_select.test", "a", ["a", "b"]);
+    const card = createCard(
+      {
+        entity: "input_select.test",
+        tap_action: { action: "perform-action" },
+      },
+      hass
+    );
+
+    card.shadowRoot.querySelector(".knob-outer").click();
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("perform-action needs")
+    );
+    expect(hass.callService).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("url action opens valid http URL", () => {
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const hass = makeHass("input_select.test", "a", ["a", "b"]);
+    const card = createCard(
+      {
+        entity: "input_select.test",
+        tap_action: { action: "url", url_path: "https://example.com" },
+      },
+      hass
+    );
+
+    card.shadowRoot.querySelector(".knob-outer").click();
+
+    expect(openSpy).toHaveBeenCalledWith(
+      "https://example.com",
+      "_blank",
+      "noopener"
+    );
+    openSpy.mockRestore();
+  });
+});
+
+describe("Lifecycle regression", () => {
+  beforeEach(() => loadCard());
+
+  it("removing and re-adding the card preserves functionality", () => {
+    const hass = makeHass("input_select.test", "a", ["a", "b", "c"]);
+    const card = createCard({ entity: "input_select.test" }, hass);
+    const parent = card.parentNode;
+
+    card.remove();
+    parent.appendChild(card);
+
+    const knob = card.shadowRoot.querySelector(".knob-outer");
+
+    knob.click();
+
+    expect(hass.callService).toHaveBeenCalledWith("input_select", "select_option", {
+      entity_id: "input_select.test",
+      option: "b",
     });
   });
 });

@@ -11,11 +11,12 @@ export function loadCard() {
   const cardSource = readFileSync(cardPath, "utf-8");
 
   const testHook = `
-    globalThis.__rotaryKnobTest = {
-      escapeHtml, toNumber, safeCss, colorToRgba,
-      angleForIndex, generateCardCss,
-      VERSION, MIN_CALL_INTERVAL_MS
-    };
+  globalThis.__rotaryKnobTest = {
+    escapeHtml, toNumber, safeCss, safeUrl, colorToRgba,
+    angleForIndex, generateCardCss,
+    VERSION, MIN_CALL_INTERVAL_MS,
+    LONG_PRESS_MS, DOUBLE_TAP_MS
+  };
   `;
 
   const factory = new Function(cardSource + "\n" + testHook);

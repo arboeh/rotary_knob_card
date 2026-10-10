@@ -17,6 +17,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CONTRIBUTING.md with setup and release instructions
 - Pull request template with checklist
 
+## [1.2.2] - 2026-10-10
+
+### Improved
+- Refactoring: `_handleAction` split into separate handler methods (`_handlePerformAction`, `_handleNavigate`, `_handleUrl`, `_handleMoreInfo`, `_handleToggle`) for improved maintainability and readability
+- `_handlePerformAction`: Simplified domain/service extraction via direct destructuring assignment
+- `_handleToggle`: Reuse of `_handlePerformAction` to eliminate code duplication
+- Security: `url` action now validates protocols via `safeUrl` helper function (only http/https allowed)
+- Documentation expanded and updated
+
+### Tests
+- 84 tests (expanded from 77 to 84)
+- New tests for URL security and edge cases in action handlers
+
+## [1.2.1] - 2026-10-10
+
+### Fixed
+- Card no longer dies when removed from DOM and re-added (e.g. view changes, edit mode): `disconnectedCallback` now only cleans up gesture timers instead of cloning nodes, and `connectedCallback` forces a rebuild when needed
+- Hold gesture now uses Pointer Events (`pointerdown`/`pointerup`/`pointercancel`/`pointerleave`) instead of separate mousedown/touchstart handlers, eliminating double-firing and stale `holdFired` state
+- `holdFired` is now reset on every `pointerdown`, fixing swallowed taps after a long-press that didn't trigger a click
+- Double-tap detection is more reliable with `touch-action: manipulation` CSS preventing zoom interference
+- `navigate` action now uses `history.pushState` + `window.location-changed` event instead of non-existent `hass.navigate`
+- `url` action opens with `noopener` for security
+- `more-info` and `toggle` actions now fall back to `this._config.entity` when no entity is specified in the action config
+- `perform-action` is now the primary action type (alias `call-service` kept for backward compatibility); service calls now pass `target` as a separate argument and catch promise rejections
+- Removed dead code paths (`service_domain`/`service_entity_id` and split `domain`/`service` forms)
+- Removed all `[TEMP DEBUG]` console.log statements
+
+### Changed
+- `_bindGestures` signature simplified: handlers no longer receive event objects; `stop` parameter removed
+- Load banner now prints version on console: `ROTARY-KNOB-CARD v1.2.1` (useful for cache verification)
+- Added `debug` config option (boolean) to enable runtime action logging via `console.debug`
+
 ## [1.2.0] - 2026-10-10
 
 ### Added
@@ -56,7 +88,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configurable size, padding, colors, and font sizes
 - Support for `input_select` entities
 
-[Unreleased]: https://github.com/arboeh/rotary_knob_card/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/arboeh/rotary_knob_card/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/arboeh/rotary_knob_card/releases/tag/v1.2.2
+[1.2.1]: https://github.com/arboeh/rotary_knob_card/releases/tag/v1.2.1
 [1.2.0]: https://github.com/arboeh/rotary_knob_card/releases/tag/v1.2.0
 [1.1.1]: https://github.com/arboeh/rotary_knob_card/releases/tag/v1.1.1
 [1.1.0]: https://github.com/arboeh/rotary_knob_card/releases/tag/v1.1.0

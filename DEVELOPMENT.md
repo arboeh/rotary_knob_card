@@ -112,9 +112,9 @@ npm run coverage        # Coverage report (currently disabled — see notes)
 
 | File                          | Description                                         |
 | ----------------------------- | --------------------------------------------------- |
-| `tests/rotary_knob_card.test.js` | Full test suite — 63 tests in 8 describe blocks    |
-| `tests/helpers/load_card.js`    | Loads the card via `new Function()`, exposes utilities via `globalThis.__rotaryKnobTest` |
-| `tests/helpers/create_card.js`  | `makeHass()` factory and `createCard()` helper      |
+| `tests/rotary_knob_card.test.js`   | Full test suite — 82 tests in 10 describe blocks  |
+| `tests/helpers/load_card.js`      | Loads the card via `new Function()`, exposes utilities via `globalThis.__rotaryKnobTest` |
+| `tests/helpers/create_card.js`    | `makeHass()` factory and `createCard()` helper      |
 
 ### Writing tests
 
@@ -164,10 +164,17 @@ npm run lint -- --fix  # Auto-fix issues
 
 ## Debugging
 
-The card includes `[TEMP DEBUG]` `console.log` statements (marked with comments).
-These are safe to remove after verifying gesture handlers work correctly. They
-appear on lines ~444, ~529, ~533, ~556, ~579, ~755, ~780, ~791, ~797, ~804 in
-`rotary_knob_card.js`.
+Set `debug: true` in the card config to enable runtime action logging:
+
+```yaml
+type: custom:rotary-knob-card
+entity: input_select.living_room_mode
+debug: true
+```
+
+When enabled, the card prints gesture and action info to `console.debug`
+prefixed with `[rotary-knob-card]`. The console also displays a colored
+load banner with the card version on startup.
 
 ## CI/CD
 
