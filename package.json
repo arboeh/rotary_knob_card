@@ -1,0 +1,24 @@
+{
+  "name": "rotary-knob-card",
+  "version": "1.2.0",
+  "private": true,
+  "type": "module",
+  "description": "A tactile rotary knob dashboard card for Home Assistant input_select entities",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@vitest/coverage-v8": "^4.1.11",
+    "eslint": "^10.12.0",
+    "globals": "^17.13.0",
+    "jsdom": "^29.1.1",
+    "vitest": "^4.1.11"
+  }
+}
