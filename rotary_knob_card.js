@@ -6,6 +6,9 @@
  * that rotates to reflect the current option of an `input_select` /
  * `select` entity and lets users pick a different option by clicking.
  *
+ * Supports `tap_action`, `hold_action`, and `double_tap_action`
+ * configured per the Home Assistant card action convention.
+ *
  * Design notes
  * - The DOM is only rebuilt when the option set changes; the ha-card
  *   element persists so card-mod styles remain stable across updates.
@@ -16,8 +19,10 @@
  */
 
 const ROTARY_KNOB_TAG = "rotary-knob-card";
-const VERSION = "1.1.1";
+const VERSION = "1.2.2";
 const MIN_CALL_INTERVAL_MS = 400;
+const LONG_PRESS_MS = 500;
+const DOUBLE_TAP_MS = 300;
 const ALLOWED_DOMAINS = ["input_select", "select"];
 
 /*
@@ -72,6 +77,23 @@ function safeCss(value, fallback) {
   if (/[;{}<>\`]/.test(trimmed)) return fallback;
   if (/javascript:|expression|url\s*\(/i.test(trimmed)) return fallback;
   return trimmed;
+}
+
+/**
+ * Validate a URL for safe opening. Only allows http: and https: schemes.
+ * @param {string} url - The URL to validate
+ * @returns {string|null} The URL if valid, null otherwise
+ */
+function safeUrl(url) {
+  if (typeof url !== "string" || !url.trim()) return null;
+  try {
+    const parsed = new URL(url.trim());
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") return url.trim();
+    console.warn(`rotary-knob-card: blocked url with protocol '${parsed.protocol}'`);
+  } catch {
+    console.warn("rotary-knob-card: invalid url_path provided");
+  }
+  return null;
 }
 
 /**
@@ -148,6 +170,9 @@ function generateCardCss(c) {
       box-shadow: inset 2px 2px 5px rgba(255,255,255,0.1), 5px 5px 15px rgba(0,0,0,0.5), -2px -2px 10px rgba(255,255,255,0.05);
       position: relative; transition: transform 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
       cursor: pointer; flex-shrink: 0;
+      touch-action: manipulation; user-select: none;
+      -webkit-user-select: none; -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
     }
     .knob-indicator { position: absolute; top: ${knobSize * 0.0714}px; left: ${knobSize / 2 - 4}px; width: 8px; height: ${knobSize * 0.143}px; background: ${accentColor}; border-radius: 4px; box-shadow: 0 0 8px ${accentColor}; }
     .position-marker { position: absolute; top: 50%; left: 50%; width: 7px; height: 7px; border-radius: 50%; background: ${accentColor}; opacity: 0.7; box-shadow: 0 0 4px ${accentColor}; pointer-events: none; }
@@ -167,33 +192,110 @@ function generateCardCss(c) {
 }
 
 /*
+ * --- Gesture handling -------------------------------------------------
+ * Self-contained gesture manager using Pointer Events for consistent
+ * touch/mouse interaction.
+ */
+
+/**
+ * Manages tap, hold, and double-tap gestures on a single element using
+ * Pointer Events. Returns a cleanup function that stops all timers and
+ * removes listeners.
+ * @param {HTMLElement} el - The element to bind to
+ * @param {Object} handlers - Gesture callbacks
+ * @param {Function} [handlers.tap] - Single-tap handler
+ * @param {Function} [handlers.hold] - Hold / long-press handler
+ * @param {Function} [handlers.doubleTap] - Double-tap handler
+ * @param {Function} [handlers.log] - Debug log function
+ * @returns {Function} Cleanup function
+ */
+function bindGestures(el, { tap, hold, doubleTap, log = () => {} }) {
+  let holdTimer = null;
+  let holdFired = false;
+  let tapTimer = null;
+  let tapCount = 0;
+
+  const clearHold = () => { clearTimeout(holdTimer); holdTimer = null; };
+  const clearTap = () => { clearTimeout(tapTimer); tapTimer = null; tapCount = 0; };
+
+  if (hold) {
+    el.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      holdFired = false;
+      clearHold();
+      holdTimer = setTimeout(() => {
+        holdTimer = null;
+        holdFired = true;
+        log("hold");
+        hold();
+        clearTap();
+      }, LONG_PRESS_MS);
+    });
+    for (const type of ["pointerup", "pointercancel", "pointerleave"]) {
+      el.addEventListener(type, clearHold);
+    }
+    el.addEventListener("contextmenu", (e) => e.preventDefault());
+  }
+
+  el.addEventListener("click", () => {
+    if (holdFired) { holdFired = false; clearHold(); return; }
+    clearHold();
+
+    if (doubleTap) {
+      tapCount += 1;
+      if (tapCount >= 2) { clearTap(); log("double tap"); doubleTap(); return; }
+      tapTimer = setTimeout(() => {
+        clearTap();
+        log("tap (delayed)");
+        tap?.();
+      }, DOUBLE_TAP_MS);
+    } else if (tap) {
+      log("tap");
+      tap();
+      clearTap();
+    }
+  });
+
+  el.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    tap?.();
+  });
+
+  return () => { clearHold(); clearTap(); };
+}
+
+/*
  * --- Custom Element -------------------------------------------------
  */
 
 class RotaryKnobCard extends HTMLElement {
+  constructor() {
+    super();
+    this._gestureCleanups = [];
+  }
+
   /* -- Lifecycle ---------------------------------------------------- */
 
   /**
-   * Called when the element is added to the DOM.
-   */
+    * Called when the element is added to the DOM.
+    * If the card was previously removed and re-added, force a rebuild so
+    * event listeners are re-bound.
+    */
   connectedCallback() {
-    // No-op placeholder; event listeners are bound inside _build().
+    if (this._config && this._hass && !this._knobEl && this._stateObj) {
+      this._optSig = null;
+      this._stateObj = null;
+      this._applyHass();
+    }
   }
 
   /**
-   * Called when the element is removed from the DOM.
-   * Removes event listeners to prevent memory leaks when the card is
-   * removed from the DOM. Cloning a node drops all its listeners.
-   */
+    * Called when the element is removed from the DOM.
+    * Cleans up gesture timers to prevent stale callbacks.
+    */
   disconnectedCallback() {
-    if (this._knobEl) {
-      this._knobEl.replaceWith(this._knobEl.cloneNode(true));
-      this._knobEl = null;
-    }
-    if (this._labelEls) {
-      this._labelEls.forEach(el => el.replaceWith(el.cloneNode(true)));
-      this._labelEls = [];
-    }
+    this._runGestureCleanups();
   }
 
   /* -- Configuration ------------------------------------------------ */
@@ -319,6 +421,15 @@ class RotaryKnobCard extends HTMLElement {
     this._stateEl = null;
     this._labelEls = [];
     this._markerEls = [];
+    this._runGestureCleanups();
+  }
+
+  /**
+    * Stop pending hold/tap timers of all bound gestures.
+    */
+  _runGestureCleanups() {
+    for (const cleanup of this._gestureCleanups ?? []) cleanup();
+    this._gestureCleanups = [];
   }
 
   /* -- State application & rendering --------------------------------- */
@@ -392,6 +503,8 @@ class RotaryKnobCard extends HTMLElement {
     const c = this._resolveConfig();
     const { showLabels, showState, showName } = c;
 
+    this._runGestureCleanups();
+
     // --- Display labels (allow overrides via `labels` config) -------
     const configuredLabels = Array.isArray(cfg.labels) ? cfg.labels : [];
     this._displayLabels = options.map((opt, i) =>
@@ -427,16 +540,30 @@ class RotaryKnobCard extends HTMLElement {
     // so it doesn't animate from 0deg on initial load.
     this._rot = undefined;
 
-    // Clicking the knob cycles to the next option.
-    this._bindActivate(this._knobEl, () => this._cycle());
+    const actions = this._resolveActions();
+    const hasHold = !!actions.hold;
+    const hasDoubleTap = !!actions.doubleTap;
 
-    // Clicking/labeling an option jumps straight to that option.
+    // Tapping the knob cycles to the next option by default, or fires a
+    // configurable tap_action if one was provided.
+    this._bindGestures(this._knobEl, {
+      tap: actions.tap
+        ? () => this._handleAction(actions.tap)
+        : () => this._cycle(),
+      hold: hasHold ? () => this._handleAction(actions.hold) : null,
+      doubleTap: hasDoubleTap ? () => this._handleAction(actions.doubleTap) : null,
+    });
+
+    // Clicking a label jumps straight to that option.  Hold and
+    // double-tap gestures on a label fire the same card-level actions
+    // as the knob (so the entity's more-info or toggle can be shared).
     this._labelEls.forEach((el) => {
-      this._bindActivate(
-        el,
-        () => this.selectOption(parseInt(el.getAttribute("data-index"), 10)),
-        true  // stop propagation: clicking a label should not also cycle
-      );
+      const idx = parseInt(el.getAttribute("data-index"), 10);
+      this._bindGestures(el, {
+        tap: () => this.selectOption(idx),
+        hold: hasHold ? () => this._handleAction(actions.hold) : null,
+        doubleTap: hasDoubleTap ? () => this._handleAction(actions.doubleTap) : null,
+      });
     });
   }
 
@@ -529,11 +656,143 @@ class RotaryKnobCard extends HTMLElement {
   /* -- Interaction -------------------------------------------------- */
 
   /**
-   * Select an option by index, calling the Home Assistant service to
-   * set the entity's state. Throttled to prevent service-call flooding.
-   * @param {number} newIndex - The index of the option to select
-   * @returns {Promise<void>}
+   * Read tap_action / hold_action / double_tap_action from the card
+   * config into a normalized object.
+   * @returns {{tap: Object|null, hold: Object|null, doubleTap: Object|null}}
    */
+  _resolveActions() {
+    const cfg = this._config || {};
+    return {
+      tap: cfg.tap_action || null,
+      hold: cfg.hold_action || null,
+      doubleTap: cfg.double_tap_action || null,
+    };
+  }
+
+  /**
+   * Log a debug message when `debug: true` is configured.
+   * @param {...*} args - Arguments to log
+   */
+  _log(...args) {
+    if (this._config?.debug === true) console.debug("[rotary-knob-card]", ...args);
+  }
+
+  /**
+   * Execute a Home Assistant action from a tap_action / hold_action /
+   * double_tap_action config object.
+   *
+   * Supported action types follow the Home Assistant card action convention:
+   * `perform-action` (alias `call-service`), `navigate`, `url`, `more-info`,
+   * `toggle`, `none`.
+   * @param {Object} actionConfig - The action configuration object
+   */
+  _handleAction(actionConfig) {
+    if (!actionConfig?.action) return;
+    const action = actionConfig.action;
+    this._log("action", actionConfig);
+
+    switch (action) {
+      case "perform-action":
+      case "call-service":
+        this._handlePerformAction(actionConfig);
+        break;
+      case "navigate":
+        this._handleNavigate(actionConfig);
+        break;
+      case "url":
+        this._handleUrl(actionConfig);
+        break;
+      case "more-info":
+        this._handleMoreInfo(actionConfig);
+        break;
+      case "toggle":
+        this._handleToggle(actionConfig);
+        break;
+      case "none":
+        break;
+      default:
+        console.warn(`rotary-knob-card: unknown action '${action}'`);
+    }
+  }
+
+  /**
+   * Handle perform-action or call-service action.
+   * @param {Object} actionConfig - The action configuration
+   */
+  _handlePerformAction(actionConfig) {
+    const serviceId = actionConfig.perform_action ?? actionConfig.service;
+    if (!serviceId || typeof serviceId !== "string") {
+      console.warn("rotary-knob-card: perform-action needs 'perform_action: domain.service'");
+      return;
+    }
+    const [domain, service] = String(serviceId).split(".");
+    if (!domain || !service) {
+      console.warn("rotary-knob-card: perform-action needs 'perform_action: domain.service'");
+      return;
+    }
+    const data = actionConfig.data ?? actionConfig.service_data ?? {};
+    const target = actionConfig.target;
+    Promise.resolve(this._hass.callService(domain, service, data, target))
+      .catch((err) => console.warn(`rotary-knob-card: ${serviceId} failed`, err));
+  }
+
+  /**
+   * Handle navigate action.
+   * @param {Object} actionConfig - The action configuration
+   */
+  _handleNavigate(actionConfig) {
+    if (actionConfig.navigation_path && typeof actionConfig.navigation_path === "string") {
+      history.pushState(null, "", actionConfig.navigation_path);
+      window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+    }
+  }
+
+  /**
+   * Handle url action.
+   * @param {Object} actionConfig - The action configuration
+   */
+  _handleUrl(actionConfig) {
+    const url = safeUrl(actionConfig.url_path);
+    if (url) window.open(url, "_blank", "noopener");
+  }
+
+  /**
+   * Handle more-info action.
+   * @param {Object} actionConfig - The action configuration
+   */
+  _handleMoreInfo(actionConfig) {
+    const entityId = actionConfig.entity ?? actionConfig.entity_id ?? this._config?.entity;
+    if (entityId) {
+      this.dispatchEvent(new CustomEvent("hass-more-info", {
+        composed: true,
+        bubbles: true,
+        detail: { entityId },
+      }));
+    }
+  }
+
+  /**
+   * Handle toggle action.
+   * @param {Object} actionConfig - The action configuration
+   */
+  _handleToggle(actionConfig) {
+    const entityId = actionConfig.entity ?? actionConfig.entity_id;
+    if (!entityId) {
+      console.warn("rotary-knob-card: toggle action needs 'entity'");
+      return;
+    }
+    this._handlePerformAction(Object.assign({}, actionConfig, {
+      service: "homeassistant.toggle",
+      data: { entity_id: entityId }
+    }));
+  }
+
+  /**
+    * Select an option by index, calling the Home Assistant service to
+    * set the entity's state. Throttled to prevent service-call flooding.
+    * @param {number} newIndex - The index of the option to select
+    * @returns {Promise<void>}
+    */
   async selectOption(newIndex) {
     // Validate input is a valid integer index.
     if (!Number.isInteger(newIndex)) return;
@@ -571,30 +830,30 @@ class RotaryKnobCard extends HTMLElement {
     if (!options.length) return;
     const idx = options.indexOf(this._state);
     // If the current state is not among the options, idx is -1 and
-    // (idx + 1) % length wraps to 0 — selecting the first option.
+    // (idx + 1) % length wraps to 0 - selecting the first option.
     this.selectOption((idx + 1) % options.length);
   }
 
-  /**
-   * Bind activation listeners (click + Enter/Space key) to an element.
-   * When `stop` is true, events are stopped from propagating so the
-   * parent handler (e.g. knob cycling) does not also fire.
-   * @param {HTMLElement} el - The element to bind to
-   * @param {Function} handler - The click handler function
-   * @param {boolean} stop - Whether to stop event propagation
-   */
-  _bindActivate(el, handler, stop = false) {
-    el.addEventListener("click", e => {
-      if (stop) e.stopPropagation();
-      handler();
-    });
-    el.addEventListener("keydown", e => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        if (stop) e.stopPropagation();
-        handler();
-      }
-    });
+   /**
+    * Bind tap / hold / double-tap gesture handlers to an element.
+    *
+    * - **tap** (click): fires on mouse click or key (Enter/Space).
+    *   Without a `doubleTap` handler the tap fires immediately; with a
+    *   `doubleTap` handler the first click waits `DOUBLE_TAP_MS` so a
+    *   quick second click is promoted to a double-tap instead.
+    * - **hold** (long press): fires after `LONG_PRESS_MS` on pointerdown,
+    *   provided the pointer is still within the element on release.
+    *   A hold suppresses the subsequent tap.
+    * - **doubleTap**: fires when two clicks arrive within `DOUBLE_TAP_MS`.
+    * @param {HTMLElement} el - The element to bind to
+    * @param {Object} handlers - Optional callbacks
+    * @param {Function} [handlers.tap] - Single-tap handler
+    * @param {Function} [handlers.hold] - Hold / long-press handler
+    * @param {Function} [handlers.doubleTap] - Double-tap handler
+    */
+  _bindGestures(el, { tap, hold, doubleTap }) {
+    const cleanup = bindGestures(el, { tap, hold, doubleTap, log: (...a) => this._log(...a) });
+    this._gestureCleanups.push(cleanup);
   }
 
   /* -- Sizing ------------------------------------------------------- */
@@ -634,7 +893,9 @@ if (!window.customCards.some((c) => c.type === ROTARY_KNOB_TAG)) {
   window.customCards.push({
     type: ROTARY_KNOB_TAG,
     name: "Rotary Knob Card",
-    description: "Rotary knob card for input_select entities",
+    description: "Rotary knob card for input_select entities with tap, hold, and double-tap actions",
     version: VERSION,
   });
 }
+
+console.info(`%c\u2022%c ROTARY-KNOB %cv${VERSION.padStart(3, "0")} %c\u2022`, "color:#fff;background:#03A9F4", "color:#fff;background:#D4AF37;font-weight:700", "color:#03A9F4;background:#222", "color:#fff;background:#000");
