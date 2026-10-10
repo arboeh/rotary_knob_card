@@ -1,5 +1,14 @@
-.vscode/settings.json
-/.kilocode/
+.vscode/
+.idea/
+/.kilocode*/
+DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+.eslintcache
+*.tgz
 node_modules/
 coverage/
+/.env
+/.env.*
 /RELEASE_NOTES.md

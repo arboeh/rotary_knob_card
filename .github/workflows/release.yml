@@ -26,13 +26,14 @@ jobs:
         run: npm ci
 
       - name: Check version consistency
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
           # Check package.json version matches card JS VERSION
           node scripts/check-version.cjs
           
           # Check tag matches package.json (for non-pre-release tags only)
-          if [[ "${{ github.ref_name }}" != *-* ]]; then
-            TAG="${{ github.ref_name }}"
+          if [[ "$TAG" != *-* ]]; then
             VERSION=$(node -p "require('./package.json').version")
             if [ "v$VERSION" != "$TAG" ]; then
               echo "Tag $TAG does not match package.json version $VERSION" >&2
