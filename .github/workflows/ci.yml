@@ -2,9 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [main, "chore/*", "dev", "feature/*"]
-  pull_request:
     branches: [main]
+  pull_request:
 
 jobs:
   test:
