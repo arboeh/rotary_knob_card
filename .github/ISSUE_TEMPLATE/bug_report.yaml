@@ -1,0 +1,86 @@
+name: 🐛 Bug Report
+description: Report a bug or unexpected behavior
+title: '[Bug] '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Before submitting
+
+        - Check the [Troubleshooting](https://github.com/arboeh/rotary_knob_card?tab=readme-ov-file#screenshots) section
+        - Search [existing issues](https://github.com/arboeh/rotary_knob_card/issues)
+        - Verify you are using the latest version
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: Clear description of the bug
+      placeholder: 'When I set the entity to input_select.living_room, the knob does not rotate...'
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What should happen instead?
+      placeholder: 'The knob should rotate to the position matching the current option...'
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Card Version
+      placeholder: '1.2.0'
+    validations:
+      required: true
+
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant Version
+      placeholder: '2025.10.0'
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Numbered steps to reproduce the issue
+      placeholder: |
+        1. Add the card to a dashboard
+        2. Set entity to input_select.mode
+        3. Change the select option
+        4. Observe the bug
+      validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Card Configuration
+      description: Paste your card YAML (redact any secrets)
+      placeholder: |
+        type: custom:rotary-knob-card
+        entity: input_select.living_room
+        name: "Living Room"
+        knob_size: 140
+      render: yaml
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues
+          required: true
+        - label: I have verified this is not a configuration issue
+          required: true
+        - label: I have tested with a minimal configuration
+          required: false

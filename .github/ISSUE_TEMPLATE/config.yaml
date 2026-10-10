@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Home Assistant Community Discussion
+    url: https://community.home-assistant.io/t/custom-card-rotary-knob-card-input_select/
+    about: For general questions, visit the Home Assistant Community Forum
+  - name: Documentation
+    url: https://github.com/arboeh/rotary_knob_card?tab=readme-ov_file
+    about: Read the documentation before opening an issue
+  - name: Changelog
+    url: https://github.com/arboeh/rotary_knob_card/blob/main/CHANGELOG.md
+    about: Check recent changes and bug fixes
