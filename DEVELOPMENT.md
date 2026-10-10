@@ -22,6 +22,8 @@ rotary_knob_card/
 │   │   └── config.yaml
 │   ├── workflows/
 │   │   ├── ci.yml               # Lint + test + version sync on push/PR
+│   │   ├── hacs.yml             # HACS validation
+│   │   ├── codeql.yml           # CodeQL security analysis
 │   │   └── release.yml          # Release draft on tag push
 │   └── pull_request_template.md
 ├── .husky/
@@ -124,7 +126,7 @@ npm run coverage        # Coverage report (currently disabled — see notes)
 
 | File                          | Description                                         |
 | ----------------------------- | --------------------------------------------------- |
-| `tests/rotary_knob_card.test.js`   | Full test suite — 82 tests in 10 describe blocks  |
+| `tests/rotary_knob_card.test.js`   | Full test suite — 84 tests in 10 describe blocks  |
 | `tests/helpers/load_card.js`      | Loads the card via `new Function()`, exposes utilities via `globalThis.__rotaryKnobTest` |
 | `tests/helpers/create_card.js`    | `makeHass()` factory and `createCard()` helper      |
 
@@ -194,7 +196,7 @@ load banner with the card version on startup.
 
 Runs on every push and pull request to `main`:
 
-1. **Checkout** → **Setup Node.js 20** → **npm ci**
+1. **Checkout** → **Setup Node.js 20 & 22** (matrix) → **npm ci**
 2. **Lint** (`npm run lint`)
 3. **Test** (`npm test`)
 4. **Version sync** (`node scripts/check-version.cjs`) — verifies

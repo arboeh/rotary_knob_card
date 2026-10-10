@@ -8,7 +8,7 @@ body:
       value: |
         ## Before submitting
 
-        - Check the [Troubleshooting](https://github.com/arboeh/rotary_knob_card?tab=readme-ov-file#screenshots) section
+        - Check the [Configuration](https://github.com/arboeh/rotary_knob_card?tab=readme-ov-file#configuration) section
         - Search [existing issues](https://github.com/arboeh/rotary_knob_card/issues)
         - Verify you are using the latest version
 
@@ -46,6 +46,15 @@ body:
     validations:
       required: true
 
+  - type: input
+    id: browser
+    attributes:
+      label: Browser / Companion App
+      description: Which browser or Home Assistant Companion App are you using?
+      placeholder: 'Chrome 130, iOS Companion App, etc.'
+    validations:
+      required: true
+
   - type: textarea
     id: steps
     attributes:
@@ -69,6 +78,20 @@ body:
         entity: input_select.living_room
         name: "Living Room"
         knob_size: 140
+      render: yaml
+    validations:
+      required: false
+
+  - type: textarea
+    id: console_log
+    attributes:
+      label: Console Logs
+      description: |
+        Open browser dev tools (F12), enable `debug: true` in the card config, and paste any relevant console output here.
+        If there are no errors, write "none".
+      placeholder: |
+        [rotary-knob-card] perform-action: light.toggle failed
+        Error: ...
       render: yaml
     validations:
       required: false

@@ -3,10 +3,10 @@
 [🇬🇧 English](README.md) | [🇩🇪 **Deutsch**](README.de.md)
 
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Dashboard-41BDF5?logo=home-assistant)](https://www.home-assistant.io/)
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://www.hacs.xyz)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org/)
-[![Tests](https://github.com/fstancu/rotary_knob_card/actions/workflows/ci.yml/badge.svg)](https://github.com/fstancu/rotary_knob_card/actions/workflows/ci.yml)
+[![Tests](https://github.com/arboeh/rotary_knob_card/actions/workflows/ci.yml/badge.svg)](https://github.com/arboeh/rotary_knob_card/actions/workflows/ci.yml)
 
 Eine schöne, taktile Drehknopf-Dashboard-Karte für Home Assistant. Sie zeichnet
 ein neumophoristisches Rädchen, das sich dreht, um die aktuelle Option einer
@@ -30,7 +30,7 @@ Die Karte unterstützt Standard-Home-Assistant-Card-Actions: `tap_action`,
   `double_tap_action` gemäß der HA Card Action Konvention.
 - **Sicherheitsfokussiert**: Alle Konfigurationswerte werden HTML/CSS-escaped;
   Service-Aufrufe werden gedrosselt, um Überflutung zu verhindern; URL-Aktionen
-  sind auf `http:` und `https:`-Protokolle beschränkt.
+  sind auf `http:` und `https:`-Protokolle beschränkt. Siehe [SECURITY.md](SECURITY.md).
 - **Keine Abhängigkeiten**: Reines Custom Element - kein Framework erforderlich.
 
 ## Installation
@@ -39,7 +39,7 @@ Die Karte unterstützt Standard-Home-Assistant-Card-Actions: `tap_action`,
 
 1. Öffne **HACS** in deiner Home Assistant-Instanz.
 2. Klicke auf die **drei Punkte (⋮)** → **Custom repositories**.
-3. Füge `https://github.com/fstancu/rotary_knob_card` hinzu.
+3. Füge `https://github.com/arboeh/rotary_knob_card` hinzu.
 4. Wähle **Dashboard** als Kategorie und klicke auf **Add**.
 5. Suche in der HACS-Bibliothek nach **Rotary Knob Card** und klicke auf **Download**.
 6. **Starte Home Assistant neu.**
@@ -212,14 +212,19 @@ gestagene Dateien) sowie `npm run lint` und `npm test` vor jedem Commit aus.
 
 ## Screenshots
 
-![Screenshot](images/screenshot.png)
+![Standardansicht](images/screenshot_01.png)
 
-*(TODO: Füge echte Screenshots hinzu)*
+![Kompakte Ansicht](images/screenshot_02.png)
 
-## Lizenz
+## Credits
 
-MIT License - siehe [LICENSE](LICENSE).
+Basierend auf [fstancu/rotary_knob_card](https://github.com/fstancu/rotary_knob_card),
+umgesetzt und überarbeitet von [arboeh](https://github.com/arboeh).
 
-## Repository
+Wichtige Verbesserungen gegenüber dem Original:
 
-[https://github.com/fstancu/rotary_knob_card](https://github.com/fstancu/rotary_knob_card)
+- **Sicherheit**: Alle Konfigurationswerte (Namen, Beschriftungen, Farben, Größen, Optionsnamen) werden vor der DOM-Einspritzung HTML/CSS-escaped; URL-Aktionen auf `http:`/`https:`-Protokolle beschränkt; Service-Aufrufe gedrosselt.
+- **Validierung**: Konfigurationswerte via `toNumber()` / `safeCss()`-Helfer mit strikten Min/Max-Bounds.
+- **Performance**: DOM wird nur bei Änderung des Optionssatzes neu erstellt; ha-card-Element bleibt erhalten (card-mod-Stile stabil); Doppel-Tap-Erkennung optimiert.
+- **Barrierefreiheit**: Semantic Markup mit `role`/`aria-label`, Tastaturregelung (Enter/Space).
+- **Tests**: Umfassende Vitest + jsdom-Test-Suite (84 Tests) abdeckend Utilities, Konfiguration, Rendering, Gesten und Sicherheits-Helfer.

@@ -7,6 +7,16 @@
   "engines": {
     "node": ">=20"
   },
+  "author": "arboeh",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arboeh/rotary_knob_card.git"
+  },
+  "bugs": {
+    "url": "https://github.com/arboeh/rotary_knob_card/issues"
+  },
+  "homepage": "https://github.com/arboeh/rotary_knob_card#readme",
   "scripts": {
     "lint": "eslint .",
     "test": "vitest run",
@@ -25,7 +35,7 @@
     "husky": "^9.1.7",
     "jsdom": "^29.1.1",
     "lint-staged": "^16.4.0",
-    "conventional-changelog-conventionalcommits": "^3.1.27",
+    "conventional-changelog-conventionalcommits": "^9.3.0",
     "vitest": "^4.1.11"
   }
 }
