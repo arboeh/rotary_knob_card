@@ -91,10 +91,22 @@ npm ci
 The Husky pre-commit hook runs:
 
 1. `lint-staged` — ESLint `--fix` on staged `.js`/`.json` files
-2. `npm run lint` — full lint check
+2. `npm run lint` — full lint check  
 3. `npm test` — full test suite
 
 If any step fails, the commit is aborted.
+
+#### Running the pre-commit hook manually
+
+To run the pre-commit checks without committing:
+
+```powershell
+npx lint-staged
+```
+
+This runs ESLint `--fix` on staged files, then executes `npm run lint` and
+`npm test` exactly as the hook does — useful for validating changes before
+staging everything.
 
 ## Testing
 

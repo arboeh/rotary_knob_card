@@ -1,14 +1,12 @@
 # Rotary Knob Card für Home Assistant
 
-<img src="images/screenshot.png" alt="Rotary Knob Card" width="600"/>
-
 [🇬🇧 English](README.md) | [🇩🇪 **Deutsch**](README.de.md)
 
-[![HACS](https://img.shields.io/badge/HACS-Custom-card-blue.svg)](https://hacs.xyz)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Dashboard-41BDF5?logo=home-assistant)](https://www.home-assistant.io/)
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Compatible-41BDF5.svg)](https://www.home-assistant.io/)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org/)
-[![Tests](https://github.com/arboeh/rotary_knob_card/actions/workflows/ci.yml/badge.svg)](https://github.com/arboeh/rotary_knob_card/actions/workflows/ci.yml)
+[![Tests](https://github.com/fstancu/rotary_knob_card/actions/workflows/ci.yml/badge.svg)](https://github.com/fstancu/rotary_knob_card/actions/workflows/ci.yml)
 
 Eine schöne, taktile Drehknopf-Dashboard-Karte für Home Assistant. Sie zeichnet
 ein neumophoristisches Rädchen, das sich dreht, um die aktuelle Option einer
@@ -18,8 +16,9 @@ durch einen Klick eine andere Option auswählen.
 Die Karte unterstützt Standard-Home-Assistant-Card-Actions: `tap_action`,
 `hold_action` und `double_tap_action`.
 
-<!-- Platzhalter für Screenshot -->
-![Screenshot](images/screenshot.png)
+![Screenshot 01](images/screenshot_01.png)
+
+![Screenshot 02](images/screenshot_02.png)
 
 ## Funktionen
 
@@ -32,7 +31,7 @@ Die Karte unterstützt Standard-Home-Assistant-Card-Actions: `tap_action`,
 - **Sicherheitsfokussiert**: Alle Konfigurationswerte werden HTML/CSS-escaped;
   Service-Aufrufe werden gedrosselt, um Überflutung zu verhindern; URL-Aktionen
   sind auf `http:` und `https:`-Protokolle beschränkt.
-- **Keine Abhängigkeiten**: Reines Custom Element — kein Framework erforderlich.
+- **Keine Abhängigkeiten**: Reines Custom Element - kein Framework erforderlich.
 
 ## Installation
 
@@ -40,7 +39,7 @@ Die Karte unterstützt Standard-Home-Assistant-Card-Actions: `tap_action`,
 
 1. Öffne **HACS** in deiner Home Assistant-Instanz.
 2. Klicke auf die **drei Punkte (⋮)** → **Custom repositories**.
-3. Füge `https://github.com/arboeh/rotary_knob_card` hinzu.
+3. Füge `https://github.com/fstancu/rotary_knob_card` hinzu.
 4. Wähle **Dashboard** als Kategorie und klicke auf **Add**.
 5. Suche in der HACS-Bibliothek nach **Rotary Knob Card** und klicke auf **Download**.
 6. **Starte Home Assistant neu.**
@@ -80,7 +79,7 @@ name: "Wohnzimmer"
 
 | Option                   | Typ      | Standard                    | Beschreibung                                                             |
 | ------------------------ | -------- | --------------------------- | ------------------------------------------------------------------------ |
-| `entity`                 | string   | —                           | **Erforderlich.** `input_select` oder `select` Entity-ID.                |
+| `entity`                 | string   | -                           | **Erforderlich.** `input_select` oder `select` Entity-ID.                |
 | `name`                   | string   | `"Rotary Control"`          | Text unter dem Status-Label.                                             |
 | `knob_size`              | number   | `140`                       | Durchmesser des Knopfes in px.                                           |
 | `label_gap`              | number   | `34`                        | Abstand vom Knopfrand zum Beschriftungsring.                             |
@@ -97,11 +96,11 @@ name: "Wohnzimmer"
 | `show_labels`            | boolean  | `true`                      | Beschriftungsring um den Knopf anzeigen.                                 |
 | `show_state`             | boolean  | `true`                      | Aktuellen Status unter dem Knopf anzeigen.                               |
 | `show_name`              | boolean  | `true`                      | Namen-Untertitel unter dem Status anzeigen.                              |
-| `tap_action`             | object   | —                           | Aktion beim Einfach-Tap (ohne `double_tap_action`).                      |
-| `hold_action`            | object   | —                           | Aktion beim Langdruck.                                                   |
-| `double_tap_action`      | object   | —                           | Aktion beim Doppel-Tap. Ohne sie wird ein Tap sofort ausgelöst.          |
+| `tap_action`             | object   | -                           | Aktion beim Einfach-Tap (ohne `double_tap_action`).                      |
+| `hold_action`            | object   | -                           | Aktion beim Langdruck.                                                   |
+| `double_tap_action`      | object   | -                           | Aktion beim Doppel-Tap. Ohne sie wird ein Tap sofort ausgelöst.          |
 | `debug`                  | boolean  | `false`                     | Aktiviert Debug-Logging in der Browser-Konsole.                        |
-| `labels``                 | list     | —                           | Benutzerdefinierte Beschriftungen für Optionen (1:1 zugeordnet).         |
+| `labels``                 | list     | -                           | Benutzerdefinierte Beschriftungen für Optionen (1:1 zugeordnet).         |
 
 ### Beispiele
 
@@ -219,8 +218,8 @@ gestagene Dateien) sowie `npm run lint` und `npm test` vor jedem Commit aus.
 
 ## Lizenz
 
-MIT License — siehe [LICENSE](LICENSE).
+MIT License - siehe [LICENSE](LICENSE).
 
 ## Repository
 
-[https://github.com/arboeh/rotary_knob_card](https://github.com/arboeh/rotary_knob_card)
+[https://github.com/fstancu/rotary_knob_card](https://github.com/fstancu/rotary_knob_card)

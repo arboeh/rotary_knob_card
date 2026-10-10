@@ -19,3 +19,22 @@ Tests live in `tests/`. Add new test cases to the relevant `describe` block in
 
 GitHub Actions runs `npm run lint` and `npm test` on every push and pull
 request targeting `main`.
+
+## CHANGELOG
+
+The CHANGELOG.md is auto-generated from Git commit messages using
+conventional-changelog. Use [Conventional Commits](https://www.conventionalcommits.org/) format:
+
+- `feat: add new feature`
+- `fix: fix a bug`
+- `docs: update docs`
+- `refactor: restructure code`
+- `test: add tests`
+- `chore: maintenance`
+
+Example commit:
+```bash
+git commit -m "feat: support dark mode in rotary knob"
+```
+
+CI automatically updates CHANGELOG.md with each push.

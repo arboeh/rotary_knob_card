@@ -1,14 +1,12 @@
 # Rotary Knob Card for Home Assistant
 
-<img src="" alt="Rotary Knob Card" width="600"/>
-
 [🇬🇧 English](README.md) | [🇩🇪 **Deutsch**](README.de.md)
 
-[![HACS](https://img.shields.io/badge/HACS-Custom-card-blue.svg)](https://hacs.xyz)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Dashboard-41BDF5?logo=home-assistant)](https://www.home-assistant.io/)
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Compatible-41BDF5.svg)](https://www.home-assistant.io/)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org/)
-[![Tests](https://github.com/arboeh/rotary_knob_card/actions/workflows/ci.yml/badge.svg)](https://github.com/arboeh/rotary_knob_card/actions/workflows/ci.yml)
+[![Tests](https://github.com/fstancu/rotary_knob_card/actions/workflows/ci.yml/badge.svg)](https://github.com/fstancu/rotary_knob_card/actions/workflows/ci.yml)
 
 A beautiful, tactile rotary knob dashboard card for Home Assistant. It renders a
 neumorphic knob that rotates to reflect the current option of an `input_select`
@@ -17,8 +15,9 @@ or `select` entity and lets users pick a different option by clicking.
 The card supports standard Home Assistant card actions: `tap_action`,
 `hold_action`, and `double_tap_action`.
 
-<!-- Replace with real screenshot -->
-![Screenshot](images/screenshot.png)
+![Screenshot 01](images/screenshot_01.png)
+
+![Screenshot 02](images/screenshot_02.png)
 
 ## Features
 
@@ -39,7 +38,7 @@ The card supports standard Home Assistant card actions: `tap_action`,
 
 1. Open **HACS** in your Home Assistant instance.
 2. Click the **three dots (⋮)** → **Custom repositories**.
-3. Paste `https://github.com/arboeh/rotary_knob_card`.
+3. Paste `https://github.com/fstancu/rotary_knob_card`.
 4. Select **Dashboard** as the category and click **Add**.
 5. Search for **Rotary Knob Card** in the HACS store and click **Download**.
 6. **Restart Home Assistant.**
@@ -231,4 +230,4 @@ MIT License - see [LICENSE](LICENSE).
 
 ## Repository
 
-[https://github.com/arboeh/rotary_knob_card](https://github.com/arboeh/rotary_knob_card)
+[https://github.com/fstancu/rotary_knob_card](https://github.com/fstancu/rotary_knob_card)

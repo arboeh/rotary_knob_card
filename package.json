@@ -25,6 +25,7 @@
     "husky": "^9.1.7",
     "jsdom": "^29.1.1",
     "lint-staged": "^16.4.0",
+    "conventional-changelog-conventionalcommits": "^3.1.27",
     "vitest": "^4.1.11"
   }
 }
