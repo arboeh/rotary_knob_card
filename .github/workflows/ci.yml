@@ -29,4 +29,4 @@ jobs:
         run: npm test
 
       - name: Version check
-        run: node -e "const v=require('./package.json').version; const c=require('fs').readFileSync('rotary_knob_card.js','utf-8').match(/VERSION\\s*=\\s*['\"]([^'\"]+)['\"]/)[1]; if(v!==c) {console.error('package.json version ('+v+') does not match card VERSION ('+c+')'); process.exit(1)} console.log('Versions match: '+v)"
+        run: node scripts/check-version.cjs

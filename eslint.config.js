@@ -19,6 +19,16 @@ export default [
   },
 
   {
+    files: ["**/*.cjs"],
+    languageOptions: {
+      sourceType: "commonjs",
+      globals: {
+        ...globals.node,
+      },
+    },
+  },
+
+  {
     files: ["tests/**/*.test.js", "tests/**/*.js"],
     languageOptions: {
       sourceType: "module",
