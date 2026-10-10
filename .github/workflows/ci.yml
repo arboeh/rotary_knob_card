@@ -35,8 +35,3 @@ jobs:
 
       - name: Version check
         run: node scripts/check-version.cjs
-
-      - name: Generate CHANGELOG
-        run: npm run changelog
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
