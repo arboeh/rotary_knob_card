@@ -37,6 +37,6 @@ jobs:
         run: node scripts/check-version.cjs
 
       - name: Generate CHANGELOG
-        run: conventional-changelog -p conventionalcommits -i CHANGELOG.md -s -r 0
+        run: npm run changelog
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

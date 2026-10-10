@@ -22,6 +22,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
+    "changelog": "conventional-changelog -p conventionalcommits -i CHANGELOG.md -s -r 0",
     "prepare": "husky"
   },
   "lint-staged": {
