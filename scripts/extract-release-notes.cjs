@@ -12,24 +12,13 @@ if (!tag) {
 
 const version = tag.replace(/^v/, '');
 const changelog = fs.readFileSync(changelogPath, 'utf-8');
-
 const lines = changelog.split(/\r?\n/);
 const header = `## [${version}]`;
-let startIdx = -1;
-for (let i = 0; i < lines.length; i++) {
-  if (lines[i].startsWith(header)) {
-    startIdx = i;
-    break;
-  }
-}
+const startIdx = lines.findIndex(line => line.startsWith(header));
 
 if (startIdx === -1) {
   if (version.includes('-')) {
-    fs.writeFileSync(
-      outputPath,
-      `Pre-release ${tag}. See CHANGELOG.md for details.\n`,
-      'utf-8'
-    );
+    fs.writeFileSync(outputPath, `Pre-release ${tag}. See CHANGELOG.md for details.\n`, 'utf-8');
     console.log(`Pre-release notes written for ${tag}`);
     process.exit(0);
   }
@@ -43,10 +32,7 @@ for (let i = startIdx + 1; i < lines.length; i++) {
   contentLines.push(lines[i]);
 }
 
-const result = contentLines
-  .join('\n')
-  .replace(/^\s+/, '')
-  .replace(/\s+$/, '');
+const result = contentLines.join('\n').trim();
 
 if (!result) {
   console.error(`Changelog section for ${version} is empty`);
