@@ -26,7 +26,7 @@ jobs:
         run: npm ci
 
       - name: Generate Changelog
-        run: npx conventional-changelog -p conventionalcommits -i CHANGELOG.md -s -r 0
+        run: conventional-changelog -p conventionalcommits -i CHANGELOG.md -s -r 0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
