@@ -25,15 +25,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Generate Release Notes
-        run: npm run changelog:release
+      - name: Extract release notes
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: node scripts/extract-release-notes.cjs "$TAG"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: rotary_knob_card.js
           body_path: RELEASE_NOTES.md
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
