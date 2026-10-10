@@ -56,7 +56,7 @@ body:
         2. Set entity to input_select.mode
         3. Change the select option
         4. Observe the bug
-      validations:
+    validations:
       required: true
 
   - type: textarea

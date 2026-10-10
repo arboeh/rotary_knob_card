@@ -45,8 +45,24 @@ The card supports standard Home Assistant card actions: `tap_action`,
 
 ### Manual
 
-Download `rotary_knob_card.js` into your `www` or `config/www` folder, then add
-it as a **Resource** in **Settings → Dashboards → Resources**.
+Download `rotary_knob_card.js` into your `www` (or `config/www`) folder, then register
+it as a Lovelace resource.
+
+**Via UI (recommended):**
+- **Settings → Dashboards → Three dots (⋮) → Resources → Add resource**
+- URL: `/local/rotary_knob_card.js`
+- Module type: `JavaScript Module`
+
+**Via `configuration.yaml`:**
+
+```yaml
+lovelace:
+  resources:
+    - url: /local/rotary_knob_card.js
+      type: module
+```
+
+After adding, restart Home Assistant.
 
 ## Usage
 
@@ -158,6 +174,13 @@ double_tap_action:
   (≈300 ms) to detect a second tap; without it, tap fires immediately.
 - `hold_action` suppresses the tap action when the long-press threshold is
   exceeded.
+- **Timing:** `LONG_PRESS_MS` = 500 ms (hold), `DOUBLE_TAP_MS` = 300 ms
+  (double-tap detection).
+- **Touch support:** Hold and double-tap work on touch devices via
+  `touchstart`/`touchend`/`touchcancel`. Long-press is not cancelable by
+  context menu (which is suppressed on touch).
+- **Keyboard support:** Press <kbd>Enter</kbd> or <kbd>Space</kbd> to fire the
+  `tap_action` (hold and double-tap are not triggered via keyboard by design).
 
 ## Development
 

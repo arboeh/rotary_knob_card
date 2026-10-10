@@ -46,8 +46,24 @@ Die Karte unterstützt Standard-Home-Assistant-Card-Actions: `tap_action`,
 
 ### Manuelle Installation
 
-Lade `rotary_knob_card.js` in deinen `www`-Ordner herunter und füge ihn als
-**Resource** unter **Einstellungen → Dashboards → Ressourcen** hinzu.
+Lade `rotary_knob_card.js` in deinen `www`-Ordner (oder `config/www`) herunter
+und registriere sie als Lovelace-Resource.
+
+**Über die Benutzeroberfläche (empfohlen):**
+- **Einstellungen → Dashboards → Drei Punkte (⋮) → Ressourcen → Ressource hinzufügen**
+- URL: `/local/rotary_knob_card.js`
+- Modul-Typ: `JavaScript Module`
+
+**Über `configuration.yaml`:**
+
+```yaml
+lovelace:
+  resources:
+    - url: /local/rotary_knob_card.js
+      type: module
+```
+
+Starte danach Home Assistant neu.
 
 ## Verwendung
 
@@ -158,6 +174,13 @@ double_tap_action:
 - Wenn `double_tap_action` festgelegt ist, wird ein einfacher Tap um
   `DOUBLE_TAP_MS` (≈300 ms) verzögert, um einen zweiten Tap zu erkennen.
 - `hold_action` unterdrückt den Tap, wenn die Langdruck-Schwelle überschritten wird.
+- **Timing:** `LONG_PRESS_MS` = 500 ms (Langdruck), `DOUBLE_TAP_MS` = 300 ms
+  (Doppel-Tap-Erkennung).
+- **Touch-Unterstützung:** Langdruck und Doppel-Tap funktionieren auf
+  Touch-Geräten über `touchstart`/`touchend`/`touchcancel`.
+- **Tastaturunterstützung:** Drücke <kbd>Enter</kbd> oder <kbd>Space</kbd>,
+  um die `tap_action` auszulösen (Langdruck und Doppel-Tap werden per
+  Tastatur nicht ausgelöst).
 
 ## Entwicklung
 
